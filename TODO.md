@@ -153,6 +153,8 @@
 | G4 | CI Build passing | ✅ | Rust build + Docker image |
 | G5 | Security scanning | ✅ | Trivy vulnerability scan |
 | G6 | UAT workflow | ✅ | 6 test modules, 27 test cases |
+| G7 | Create AGENTS.md | ✅ | AI agent development guide |
+| G8 | Create deploy.yml | ✅ | GHCR push workflow |
 
 ---
 
@@ -169,10 +171,10 @@
 | Phase 7 | 6 | 0 | 0 | 6 |
 | Phase 8 | 6 | 0 | 0 | 6 |
 | Phase 9 | 7 | 0 | 0 | 7 |
-| GitHub | 6 | 6 | 0 | 0 |
-| **TOTAL** | **79** | **34** | **1** | **44** |
+| GitHub | 8 | 8 | 0 | 0 |
+| **TOTAL** | **81** | **36** | **1** | **44** |
 
-**Completion: 43%**
+**Completion: 46%**
 
 ---
 
