@@ -1,6 +1,7 @@
 # Aetheris - Sovereign AI-Native Personal Cloud
 
 ![Build Status](https://github.com/nrupala/aetheris/actions/workflows/build.yml/badge.svg)
+![UAT Tests](https://github.com/nrupala/aetheris/actions/workflows/uat.yml/badge.svg)
 ![Pages](https://github.com/nrupala/aetheris/actions/workflows/pages.yml/badge.svg)
 
 **Aetheris** is a zero-trust, zero-knowledge personal cloud system built for the agentic age. It replaces commercial edge providers like Cloudflare with an invisible, encrypted FOSS mesh.
@@ -78,5 +79,6 @@ MIT License - See [LICENSE](LICENSE) for details.
 ---
 
 **Version:** 1.0.0  
-**Status:** Production Ready  
-**Date:** 2026-04-15
+**Status:** CI/CD Passing | UAT Passing | Ready for Deployment  
+**Date:** 2026-04-15  
+**Progress:** 43% (Phase 1-2 Complete, Phase 3 In Progress)
