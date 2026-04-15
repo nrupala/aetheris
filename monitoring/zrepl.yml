@@ -1,0 +1,19 @@
+jobs:
+  - name: aetheris_vault_snapshots
+    type: snap
+    datasets:
+      - "aetheris_vault/secure_data<"
+    snapshotting:
+      type: periodic
+      prefix: zrepl_
+      interval: 15m
+    pruning:
+      keep:
+        - type: last_n
+          count: 4
+        - type: grid
+          grid: 1x1h | 24x1h
+          regex: "^zrepl_.*"
+        - type: grid
+          grid: 1x24h | 30x24h
+          regex: "^zrepl_.*"

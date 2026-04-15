@@ -1,0 +1,20 @@
+{
+  "sync_state": {
+    "last_pulse": "2026-04-15T00:00:00Z",
+    "active_peers": 0,
+    "vault_status": "init"
+  },
+  "endpoints": {
+    "upload": "http://10.0.0.1:8080/upload",
+    "download": "http://10.0.0.1:8080/download",
+    "search": "http://10.0.0.1:8080/search",
+    "metrics": "http://10.0.0.1:8080/metrics",
+    "status": "http://10.0.0.1:8080/status"
+  },
+  "flags": {
+    "auto_index_on_sync": true,
+    "snapshot_after_sync": true,
+    "notify_on_conflict": true
+  },
+  "version": "1.0.0"
+}

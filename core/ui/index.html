@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aetheris // Zero-Cloud</title>
+    <style>
+        :root { --bg: #0d1117; --text: #c9d1d9; --accent: #58a6ff; --card: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
+               background: var(--bg); color: var(--text); margin: 0; padding: 2rem; line-height: 1.5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { border-bottom: 1px solid #30363d; padding-bottom: 10px; font-weight: 300; letter-spacing: -1px; }
+        
+        .search-box { background: var(--card); padding: 1.5rem; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 2rem; }
+        input[type="text"] { width: 80%; background: #010409; border: 1px solid #30363d; color: white; padding: 10px; border-radius: 6px; }
+        .btn { text-decoration: none; color: var(--accent); font-size: 0.9rem; border: 1px solid var(--accent); padding: 4px 12px; border-radius: 4px; display: inline-block; }
+        .btn:hover { background: var(--accent); color: white; }
+        
+        ul { list-style: none; padding: 0; }
+        li { background: var(--card); margin-bottom: 8px; padding: 12px; border-radius: 6px; 
+             display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
+        li:hover { border-color: var(--accent); }
+        
+        .status { font-size: 0.8rem; color: #8b949e; margin-top: 2rem; text-align: center; }
+        .logo { font-size: 2rem; margin-bottom: 1rem; }
+        .subtitle { color: #8b949e; margin-bottom: 2rem; }
+        
+        .upload-box { background: var(--card); padding: 1.5rem; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 2rem; }
+        input[type="file"] { background: #010409; border: 1px solid #30363d; padding: 10px; border-radius: 6px; color: white; }
+        
+        .security-badge { display: inline-block; background: #238636; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">⬡</div>
+        <h1>Aetheris Core <span class="security-badge">ZERO-TRUST</span></h1>
+        <p class="subtitle">Sovereign AI-Native Personal Cloud</p>
+        
+        <div class="search-box">
+            <h3>Semantic Search</h3>
+            <form action="/search" method="GET">
+                <input type="text" name="q" placeholder="Ask your data anything (e.g. 'tax returns 2023')..." required>
+                <button type="submit" class="btn">Search</button>
+            </form>
+        </div>
+        
+        <div class="upload-box">
+            <h3>Upload File</h3>
+            <form action="/upload" method="POST" enctype="multipart/form-data">
+                <input type="file" name="file" required>
+                <button type="submit" class="btn">Upload</button>
+            </form>
+        </div>
+
+        <h3>Vault Files</h3>
+        <ul>
+            <li>
+                <span>example_document.pdf</span>
+                <a href="/download/example_document.pdf" class="btn">Download</a>
+            </li>
+        </ul>
+
+        <div class="status">
+            Connected via <strong>WireGuard Mesh</strong> | Zero-Trust Policy Active<br>
+            AES-256-GCM Encrypted | ZFS Snapshots Enabled
+        </div>
+    </div>
+</body>
+</html>
