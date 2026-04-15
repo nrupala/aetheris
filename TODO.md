@@ -11,16 +11,16 @@
 
 | # | Task | Status | Dependencies |
 |---|------|--------|--------------|
-| 1.1 | Create directory structure | ⬜ | None |
-| 1.2 | Extract Rust source files (Cargo.toml, main.rs, sync.rs, etc.) | ⬜ | 1.1 |
-| 1.3 | Extract Docker configuration (compose.yaml, Dockerfile) | ⬜ | 1.1 |
-| 1.4 | Extract OPA policy files (policy.rego, opa_conf.yaml) | ⃝ | 1.1 |
-| 1.5 | Extract bash scripts (bootstrap.sh, verification.sh, etc.) | ⬜ | 1.1 |
-| 1.6 | Extract HTML UI (index.html) | ⬜ | 1.1 |
-| 1.7 | Extract config files (wg0.conf, state.json, config.yaml) | ⬜ | 1.1 |
-| 1.8 | Extract monitoring config (zrepl.yml, sentinel_dashboard.json) | ⬜ | 1.1 |
-| 1.9 | Extract sentinel agent (ai_sentinel.py) | ⬜ | 1.1 |
-| 1.10 | Validate all extracted files | ⬜ | 1.2-1.9 |
+| 1.1 | Create directory structure | ✅ | None |
+| 1.2 | Extract Rust source files (Cargo.toml, main.rs, sync.rs, etc.) | ✅ | 1.1 |
+| 1.3 | Extract Docker configuration (compose.yaml, Dockerfile) | ✅ | 1.1 |
+| 1.4 | Extract OPA policy files (policy.rego, opa_conf.yaml) | ✅ | 1.1 |
+| 1.5 | Extract bash scripts (bootstrap.sh, verification.sh, etc.) | ✅ | 1.1 |
+| 1.6 | Extract HTML UI (index.html) | ✅ | 1.1 |
+| 1.7 | Extract config files (wg0.conf, state.json, config.yaml) | ✅ | 1.1 |
+| 1.8 | Extract monitoring config (zrepl.yml, sentinel_dashboard.json) | ✅ | 1.1 |
+| 1.9 | Extract sentinel agent (ai_sentinel.py) | ✅ | 1.1 |
+| 1.10 | Validate all extracted files | ✅ | 1.2-1.9 |
 
 ---
 
@@ -28,19 +28,19 @@
 
 | # | Task | Status | Dependencies |
 |---|------|--------|--------------|
-| 2.1 | Install Rust toolchain | ⬜ | None |
-| 2.2 | Add MUSL target | ⬜ | 2.1 |
-| 2.3 | Create Cargo.toml with dependencies | ⬜ | 1.2 |
-| 2.4 | Implement main.rs (entry point + watcher + guard) | ⬜ | 1.2 |
-| 2.5 | Implement sync.rs (upload/download handlers) | ⬜ | 1.2 |
-| 2.6 | Implement connector.rs (AI/OPA bridge) | ⬜ | 1.2 |
-| 2.7 | Implement bridge.rs + implementation.rs | ⬜ | 1.2 |
-| 2.8 | Implement metrics.rs (Prometheus) | ⬜ | 1.2 |
-| 2.9 | Implement watcher.rs (security auto-ban) | ⬜ | 1.2 |
-| 2.10 | Build Rust binary (musl static) | ⬜ | 2.4-2.9 |
-| 2.11 | Verify binary size and functionality | ⬜ | 2.10 |
-| 2.12 | Create multi-stage Dockerfile | ⬜ | 2.10, 1.3 |
-| 2.13 | Build Distroless container image | ⬜ | 2.12 |
+| 2.1 | Install Rust toolchain | ✅ | None |
+| 2.2 | Add MUSL target | ✅ | 2.1 |
+| 2.3 | Create Cargo.toml with dependencies | ✅ | 1.2 |
+| 2.4 | Implement main.rs (entry point + watcher + guard) | ✅ | 1.2 |
+| 2.5 | Implement sync.rs (upload/download handlers) | ✅ | 1.2 |
+| 2.6 | Implement connector.rs (AI/OPA bridge) | ✅ | 1.2 |
+| 2.7 | Implement bridge.rs + implementation.rs | ✅ | 1.2 |
+| 2.8 | Implement metrics.rs (Prometheus) | ✅ | 1.2 |
+| 2.9 | Implement watcher.rs (security auto-ban) | ✅ | 1.2 |
+| 2.10 | Build Rust binary (musl static) | ✅ | 2.4-2.9 |
+| 2.11 | Verify binary size and functionality | ✅ | 2.10 |
+| 2.12 | Create multi-stage Dockerfile | ✅ | 2.10, 1.3 |
+| 2.13 | Build Distroless container image | ✅ | 2.12 |
 
 ---
 
@@ -48,12 +48,12 @@
 
 | # | Task | Status | Dependencies |
 |---|------|--------|--------------|
-| 3.1 | Create compose.yaml | ⬜ | 1.3 |
-| 3.2 | Create docker-compose.ghost.yaml | ⬜ | 1.3 |
-| 3.3 | Configure WireGuard (wg0.conf) | ⬜ | 1.7 |
-| 3.4 | Configure OPA (policy.rego, opa_conf.yaml) | ⬜ | 1.4 |
-| 3.5 | Configure zrepl (zrepl.yml) | ⬜ | 1.8 |
-| 3.6 | Build all container images | ⬜ | 3.1-3.5 |
+| 3.1 | Create compose.yaml | ✅ | 1.3 |
+| 3.2 | Create docker-compose.ghost.yaml | ✅ | 1.3 |
+| 3.3 | Configure WireGuard (wg0.conf) | ✅ | 1.7 |
+| 3.4 | Configure OPA (policy.rego, opa_conf.yaml) | ✅ | 1.4 |
+| 3.5 | Configure zrepl (zrepl.yml) | ✅ | 1.8 |
+| 3.6 | Build all container images | 🟡 | 3.1-3.5 |
 | 3.7 | Pull Ollama AI models | ⬜ | 3.6 |
 | 3.8 | Verify all containers start | ⬜ | 3.6 |
 | 3.9 | Test container networking | ⬜ | 3.8 |
@@ -143,20 +143,36 @@
 
 ---
 
+## GITHUB CI/CD SETUP
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| G1 | Initialize GitHub repo | ✅ | nrupala/aetheris |
+| G2 | Configure GitHub Actions | ✅ | build.yml, uat.yml, pages.yml |
+| G3 | Enable GitHub Pages | ✅ | https://nrupala.github.io/aetheris |
+| G4 | CI Build passing | ✅ | Rust build + Docker image |
+| G5 | Security scanning | ✅ | Trivy vulnerability scan |
+| G6 | UAT workflow | ✅ | 6 test modules, 27 test cases |
+
+---
+
 ## PROGRESS SUMMARY
 
 | Phase | Total | Completed | In Progress | Pending |
 |-------|-------|-----------|-------------|---------|
-| Phase 1 | 10 | 0 | 0 | 10 |
-| Phase 2 | 13 | 0 | 0 | 13 |
-| Phase 3 | 9 | 0 | 0 | 9 |
+| Phase 1 | 10 | 10 | 0 | 0 |
+| Phase 2 | 13 | 13 | 0 | 0 |
+| Phase 3 | 9 | 5 | 1 | 3 |
 | Phase 4 | 8 | 0 | 0 | 8 |
 | Phase 5 | 7 | 0 | 0 | 7 |
 | Phase 6 | 7 | 0 | 0 | 7 |
 | Phase 7 | 6 | 0 | 0 | 6 |
 | Phase 8 | 6 | 0 | 0 | 6 |
 | Phase 9 | 7 | 0 | 0 | 7 |
-| **TOTAL** | **73** | **0** | **0** | **73** |
+| GitHub | 6 | 6 | 0 | 0 |
+| **TOTAL** | **79** | **34** | **1** | **44** |
+
+**Completion: 43%**
 
 ---
 
@@ -166,6 +182,15 @@
 - 🟡 In Progress
 - ⃝ Blocked (waiting on dependency)
 - ✅ Complete
+
+---
+
+## NEXT ACTIONS (Priority Order)
+
+1. **Pull Ollama AI models** - Run `docker compose up -d` to start stack
+2. **Run UAT tests** - Execute `bash tests/run_uat.sh`
+3. **Build containers locally** - Test Docker images before deployment
+4. **Deploy to bare metal** - Run bootstrap.sh on target host
 
 ---
 
