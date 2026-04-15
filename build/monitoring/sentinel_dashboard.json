@@ -1,0 +1,43 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "title": "Aetheris Mesh Security Status",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(aetheris_security_violations_total)", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "range", "from": 0, "to": 5, "text": "SECURE", "color": "green" },
+            { "type": "range", "from": 6, "to": 20, "text": "WARNING", "color": "yellow" },
+            { "type": "range", "from": 21, "to": 100, "text": "CRITICAL", "color": "red" }
+          ]
+        }
+      }
+    },
+    {
+      "title": "AI Sentinel: Threat Prediction",
+      "type": "state-timeline",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "aetheris_ai_prediction_score", "refId": "B" }
+      ],
+      "options": { "align": "center", "mergeValues": true }
+    },
+    {
+      "title": "ZFS Vault Persistence (Bytes)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "aetheris_vault_usage_bytes", "legendFormat": "Vault Usage" }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "timezone": "browser",
+  "title": "Aetheris Sentinel"
+}

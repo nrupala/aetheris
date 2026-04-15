@@ -1,0 +1,108 @@
+version: "3.9"
+services:
+  # 1. THE TRANSPORT LAYER: Private WireGuard Mesh
+  network-mesh:
+    image: linuxserver/wireguard:latest
+    container_name: aetheris_mesh
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - SERVERURL=auto
+      - PEERS=mobile_client,laptop_client
+    volumes:
+      - ./config/wireguard:/config
+      - /lib/modules:/lib/modules
+    ports:
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 2. THE INTELLIGENCE LAYER: Local AI Inference
+  ai-engine:
+    image: ollama/ollama:latest
+    container_name: aetheris_ai
+    volumes:
+      - ./data/ollama:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 3. THE SEMANTIC STORE: Vector Database
+  vector-db:
+    image: chromadb/chroma:latest
+    container_name: aetheris_vectors
+    environment:
+      - IS_PERSISTENT=TRUE
+    volumes:
+      - ./data/chroma:/chroma/data
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 4. THE SECURITY LAYER: Open Policy Agent
+  opa-gateway:
+    image: openpolicyagent/opa:latest
+    container_name: aetheris_opa
+    command: "run --server --addr :8181 --set=decision_logs.console=true /config/policy"
+    volumes:
+      - ./config/policy:/config/policy:ro
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 5. THE CORE AGENT: Rust Orchestrator
+  aetheris-core:
+    build:
+      context: ./core
+      dockerfile: ../Dockerfile.core
+    container_name: aetheris_core
+    depends_on:
+      - network-mesh
+      - ai-engine
+      - vector-db
+      - opa-gateway
+    volumes:
+      - ./vault:/data/vault:ro
+      - ./config/policy:/etc/aetheris/policy:ro
+    environment:
+      - AI_ENDPOINT=http://ai-engine:11434
+      - OPA_ENDPOINT=http://opa-gateway:8181
+      - VAULT_PATH=/data/vault
+    network_mode: "service:network-mesh"
+    restart: unless-stopped
+
+  # 6. THE METRICS LAYER: VictoriaMetrics
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: aetheris_stats
+    volumes:
+      - ./data/victoria:/storage
+    command:
+      - "--retentionPeriod=12"
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 7. THE SENTINEL LAYER: AI Analytics Agent
+  ai-sentinel:
+    image: python:3.11-slim
+    container_name: aetheris_sentinel
+    volumes:
+      - ./vault:/data/vault:ro
+      - ./sentinel:/scripts:ro
+    command: ["python", "/scripts/ai_sentinel.py"]
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+networks:
+  aetheris_internal:
+    name: aetheris_internal
+    driver: bridge

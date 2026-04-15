@@ -1,0 +1,99 @@
+{
+  "system_id": "Aetheris-Final",
+  "test_suites": [
+    {
+      "component": "Network",
+      "tests": [
+        {
+          "id": "NET-01",
+          "requirement": "Zero-Response to ICMP",
+          "command": "ping -c 1 10.0.0.1",
+          "expected": "No response"
+        },
+        {
+          "id": "NET-02",
+          "requirement": "WireGuard stealth on UDP 51820",
+          "command": "nmap -sU -p 51820 localhost",
+          "expected": "Filtered/Stealth"
+        }
+      ]
+    },
+    {
+      "component": "Security",
+      "tests": [
+        {
+          "id": "SEC-01",
+          "requirement": "Fail-Closed without JWT",
+          "endpoint": "/download/secret.pdf",
+          "expected_status": 403
+        },
+        {
+          "id": "SEC-02",
+          "requirement": "Auto-ban after 5 failures",
+          "action": "trigger_5_failures",
+          "expected": "peer_banned"
+        }
+      ]
+    },
+    {
+      "component": "Persistence",
+      "tests": [
+        {
+          "id": "STR-01",
+          "requirement": "Snapshot Continuity",
+          "command": "zfs list -t snapshot",
+          "threshold": "> 0"
+        },
+        {
+          "id": "STR-02",
+          "requirement": "ZFS Encryption",
+          "command": "zfs get encryption aetheris_vault/secure_data",
+          "expected": "aes-256-gcm"
+        }
+      ]
+    },
+    {
+      "component": "Intelligence",
+      "tests": [
+        {
+          "id": "AI-01",
+          "requirement": "Semantic Match",
+          "query": "What is Aetheris?",
+          "expected_keywords": ["sovereign", "cloud", "mesh"]
+        },
+        {
+          "id": "AI-02",
+          "requirement": "Embedding Generation",
+          "action": "generate_embedding",
+          "expected": "768-dim vector"
+        }
+      ]
+    },
+    {
+      "component": "Core API",
+      "tests": [
+        {
+          "id": "CORE-01",
+          "requirement": "File Upload",
+          "method": "POST",
+          "endpoint": "/upload",
+          "expected_status": 200
+        },
+        {
+          "id": "CORE-02",
+          "requirement": "File Download",
+          "method": "GET",
+          "endpoint": "/download/test.txt",
+          "expected_status": 200
+        },
+        {
+          "id": "CORE-03",
+          "requirement": "Search",
+          "method": "GET",
+          "endpoint": "/search?q=test",
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

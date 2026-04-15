@@ -1,0 +1,22 @@
+version: "3.9"
+services:
+  # GHOST SHELL: High-Interaction Honeypot
+  aetheris-ghost:
+    image: alpine:latest
+    container_name: aetheris_ghost_shell
+    volumes:
+      - ./scripts/ghost/dummy_vault:/data:ro
+      - ./scripts/ghost:/scripts:ro
+    command: /scripts/simulated_ui.sh
+    networks:
+      - aetheris_isolation_net
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+    profiles:
+      - ghost
+
+networks:
+  aetheris_isolation_net:
+    name: aetheris_isolation_net
+    internal: true

@@ -1,0 +1,26 @@
+sync_policy:
+  version: "1.0"
+  encryption_layer: "wireguard-tls"
+  conflict_resolution: "latest_version"
+  scan_interval: "30s"
+
+nodes:
+  hub:
+    id: "AETHERIS-HUB-01"
+    ip: "10.0.0.1"
+    role: "introducer"
+    paths: ["/data/vault/sync"]
+  mobile:
+    id: "PEER-MOBILE-02"
+    ip: "10.0.0.2"
+    sync_mode: "on-demand"
+  desktop:
+    id: "PEER-DESKTOP-03"
+    ip: "10.0.0.3"
+    sync_mode: "full-mirror"
+
+security:
+  global_discovery: false
+  local_discovery: true
+  relaying: false
+  allow_untrusted_peers: false

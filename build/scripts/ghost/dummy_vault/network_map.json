@@ -1,0 +1,14 @@
+{
+  "network_topology": {
+    "version": "1.0-fake",
+    "nodes": [
+      {"id": "AETHERIS-HUB-01", "ip": "10.0.0.1", "role": "primary"},
+      {"id": "NODE-BACKUP-02", "ip": "10.0.0.100", "role": "secondary"},
+      {"id": "VAULT-STORAGE-03", "ip": "10.0.0.200", "role": "storage"}
+    ],
+    "keys": {
+      "master": "AAAA-BBBB-CCCC-DDDD-EEEE-FFFF",
+      "backup": "1111-2222-3333-4444-5555-6666"
+    }
+  }
+}

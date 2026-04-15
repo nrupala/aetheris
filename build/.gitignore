@@ -1,14 +1,12 @@
-# Rust build artifacts
-core/target/
-core/target/
+target/
+debug/
+release/
 *.exe
 *.dll
 *.pdb
 
-# Cargo
 Cargo.lock
 
-# Environment
 .env
 .env.local
 .env.*.local
