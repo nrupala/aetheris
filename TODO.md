@@ -143,6 +143,17 @@
 
 ---
 
+## PHASE 2: FUTURE ENHANCEMENTS (Parked)
+
+| # | Work Package | Status | Notes |
+|---|--------------|--------|-------|
+| P2.1 | Component Isolation (Firecracker) | 📋 Parked | See docs/PHASE2_ROADMAP.md |
+| P2.2 | E2EE Client Tier (Web Crypto) | 📋 Parked | See docs/PHASE2_ROADMAP.md |
+| P2.3 | Hardware-Aware Inference | 📋 Parked | See docs/PHASE2_ROADMAP.md |
+| P2.4 | Autonomous Threat Response | 📋 Parked | See docs/PHASE2_ROADMAP.md |
+
+---
+
 ## GITHUB CI/CD SETUP
 
 | # | Task | Status | Notes |
