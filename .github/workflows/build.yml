@@ -39,7 +39,8 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Build Docker Image
-        run: docker build -f Dockerfile.core -t aetheris-core:${{ github.sha }} .
+        run: |
+          docker build --no-cache -f Dockerfile.core -t aetheris-core:${{ github.sha }} .
       
       - name: Run Tests
         run: |
