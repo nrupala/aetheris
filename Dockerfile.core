@@ -1,10 +1,10 @@
 # STAGE 1: The Builder
-FROM rust:1.75-slim AS builder
+FROM rust:1.85-slim AS builder
 
 WORKDIR /usr/src/aetheris
 COPY core/ ./core/
 
-RUN apt-get update && apt-get install -y musl-tools
+RUN apt-get update && apt-get install -y musl-tools pkg-config libssl-dev
 WORKDIR /usr/src/aetheris/core
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
