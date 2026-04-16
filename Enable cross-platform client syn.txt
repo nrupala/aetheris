@@ -1,0 +1,45 @@
+To enable cross-platform client sync that maintains the "Aetheris" security standard (Zero-Trust, Peer-to-Peer, and no central cloud), the best approach is to use [Syncthing](https://syncthing.net/) as your sync engine, layered specifically over your WireGuard mesh.
+This setup ensures your files are encrypted end-to-end and move directly between your devices (Android, iOS, Windows, Mac, Linux) without ever touching a third-party server. [1, 2, 3] 
+## The Multi-Platform Sync Strategy
+
+* The Hub: Your Aetheris Rust Core (the server node) acts as a "Introducer" node. It stays online 24/7, ensuring your mobile devices always have a peer to sync with.
+* Mobile (Android/iOS): Use the Syncthing Android app or Sync Train for iOS. These connect only when your WireGuard client is active, keeping the data inside your private tunnel.
+* Desktop (Windows/macOS/Linux): Use SyncTrayzor for Windows or the native Syncthing DMG for Mac. [1, 4, 5, 6, 7, 8] 
+
+## Configuring "Aetheris-Only" Sync
+To prevent Syncthing from trying to find peers on the public internet (which would be less secure), you must restrict it to your WireGuard interface.
+
+   1. Disable Global Discovery: In Syncthing settings, uncheck "Global Discovery" and "Enable Relaying".
+   2. Bind to WireGuard IP: Set the Syncthing listening address to your 10.0.0.1 (Aetheris internal IP) so it only listens for your private mesh peers.
+   3. Static Peer Mapping: Instead of "dynamic" discovery, manually add your Peer IDs using their 10.x.x.x addresses. This makes the connection near-instant and "invisible" to the outside world. [9, 10, 11, 12, 13] 
+
+## Aetheris Sync Lifecycle
+
+| Action [1, 6] | Process | Security Benefit |
+|---|---|---|
+| Take Photo | Mobile Syncthing detects new file. | Local detection; no cloud polling. |
+| Syncing | Encrypted blocks move through WireGuard. | Double encryption (TLS + WireGuard). |
+| Landing | File arrives in the Encrypted ZFS Vault. | At-rest encryption + Snapshotting. |
+| Index | Rust Core triggers AI embedding. | Immediate semantic search availability. |
+
+## Recommended FOSS Clients
+
+* Android: Syncthing-Fork (often preferred for better battery management).
+* iOS: Möbius Sync or Sync Train.
+* Windows: SyncTrayzor (provides a familiar tray icon and folder status). [7, 8] 
+
+Should we add the syncthing service block to your existing compose.yaml so the hub is ready for your clients?
+
+[1] [https://medium.com](https://medium.com/@atharv.munot/how-i-built-my-own-private-cloud-with-syncthing-tailscale-cdd739b5e82c)
+[2] [https://itsfoss.com](https://itsfoss.com/syncthing/)
+[3] [https://railway.com](https://railway.com/deploy/syncthing)
+[4] [https://forum.syncthing.net](https://forum.syncthing.net/t/preventing-syncthing-from-using-certain-networks/22873)
+[5] [https://www.reddit.com](https://www.reddit.com/r/selfhosted/comments/1lljgtj/is_there_any_simple_way_to_just_sync_a_folder/)
+[6] [https://medium.com](https://medium.com/@atharv.munot/how-i-built-my-own-private-cloud-with-syncthing-tailscale-cdd739b5e82c)
+[7] [https://news.ycombinator.com](https://news.ycombinator.com/item?id=27149002)
+[8] [https://www.reddit.com](https://www.reddit.com/r/Android/comments/1o3fqxl/seamless_crossplatform_file_sync_with_syncthing/)
+[9] [https://forum.syncthing.net](https://forum.syncthing.net/t/how-to-implement-untrusted-syncthing-node-as-fallback/23075)
+[10] [https://brandonrozek.com](https://brandonrozek.com/blog/private-syncthing-network/)
+[11] [https://forum.syncthing.net](https://forum.syncthing.net/t/how-to-connect-to-the-web-interface-of-syncthing-installed-on-a-vps/20305)
+[12] [https://thejeshgn.com](https://thejeshgn.com/2025/05/12/linked-list-foss-apps-for-sharing-files-between-devices/)
+[13] [https://www.reddit.com](https://www.reddit.com/r/PrivacyGuides/comments/vhr3es/foss_app_for_sync_2_android_1_pc_p2p_without/)

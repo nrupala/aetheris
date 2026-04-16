@@ -1,0 +1,85 @@
+To make the Aetheris components (Rust Core, OPA, AI, and ZFS) act as a single cohesive organism, you need a Low-Level Connector API. This is the "glue" that allows the Rust Orchestrator to pass data through the Zero-Trust filters and into the AI engine.
+Following your constraints, this interface uses Unix Domain Sockets where possible (for speed) and Static Structs (no JSON overhead where unnecessary).
+1. The Connector Interface (Protocols)
+Link	Protocol	Purpose
+User ↔ Core	WireGuard / HTTP 1.1	Encrypted Mesh Access
+Core ↔ OPA	HTTP/JSON (Local)	Zero-Trust Authorization
+Core ↔ AI	REST / Stream	Semantic Embedding & Inference
+Core ↔ ZFS	CLI / Syscall	Snapshot & Persistence Control
+2. The Rust "Internal Bridge" (connector.rs)
+This code lives inside your Rust Core and acts as the central dispatcher.
+rust
+
+use serde_json::json;
+
+pub struct AetherisConnector {
+    pub ai_url: String,
+    pub opa_url: String,
+    pub vault_path: String,
+}
+
+impl AetherisConnector {
+    // BRIDGE: Rust Core -> OPA (The Guard)
+    pub async fn authorize(&self, peer_id: &str, action: &str) -> bool {
+        let client = reqwest::Client::new();
+        let body = json!({
+            "input": {
+                "peer_id": peer_id,
+                "action": action,
+            }
+        });
+        
+        let res = client.post(&self.opa_url).json(&body).send().await;
+        res.map(|r| r.status().is_success()).unwrap_or(false)
+    }
+
+    // BRIDGE: Rust Core -> AI (The Brain)
+    pub async fn index_semantic(&self, file_content: String) {
+        let client = reqwest::Client::new();
+        let payload = json!({
+            "model": "nomic-embed-text",
+            "prompt": file_content
+        });
+
+        // Fire and forget indexing to stay fast
+        let _ = client.post(format!("{}/api/embeddings", self.ai_url))
+            .json(&payload)
+            .send()
+            .await;
+    }
+
+    // BRIDGE: Rust Core -> ZFS (The Memory)
+    pub fn trigger_snapshot(&self) {
+        std::process::Command::new("zrepl")
+            .arg("signal")
+            .arg("wakeup")
+            .arg("aetheris_vault_snapshots")
+            .spawn()
+            .expect("Failed to pulse zrepl");
+    }
+}
+
+Use code with caution.
+3. The "Pulse" Interface (Event Flow)
+This is the logic that connects the "File Watcher" to the "AI Brain" automatically:
+
+    Ingress: User uploads secret_plan.pdf via the Rust Upload Handler.
+    Verify: The Connector API pings OPA to check if the user's WireGuard Peer ID has WRITE permissions.
+    Commit: Rust streams the bytes directly to the Encrypted ZFS Vault.
+    Trigger: The inotify watcher sees the new file and tells the Connector to send the text to Ollama for vector embedding.
+    Snapshot: The Connector pulses zrepl to create an immutable recovery point.
+
+4. Testing the Connection (curl from Peer)
+Once connected via WireGuard, you can test the entire "Machine" from your terminal:
+bash
+
+# Test Semantic Search (Ask the machine a question)
+curl -X GET "http://10.0.0" \
+     -H "X-Aetheris-Peer: $(cat /etc/wireguard/peer_id)"
+
+# Test Upload (Syncing a file)
+curl -X POST -F "file=@notes.txt" http://10.0.0
+
+Use code with caution.
+Why this works:
+By using this Connector API, the individual FOSS tools remain "dumb" and isolated, while the Rust Core provides the "Intelligence." If you want to swap Ollama for a different AI engine later, you only change one line in the AetherisConnector struct.

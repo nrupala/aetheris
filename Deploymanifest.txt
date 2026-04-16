@@ -1,0 +1,42 @@
+This is the Aetheris Master Manifest. It serves as the single source of truth for the system architecture, file hashes, and operational ports. This document is designed to be injected into an Autocode Agent to verify that the deployed system matches the intended "Sovereign" design.
+## 1. System Identity & Topology
+
+| Attribute | Specification |
+|---|---|
+| System Name | Aetheris (Project Zero-Cloud) |
+| Core Runtime | Rust 1.75+ (Static MUSL Binary) |
+| Container Base | Google Distroless (Static-Debian12) |
+| Primary Port | 51820/UDP (WireGuard Stealth) |
+| Internal Subnet | 10.0.0.0/24 (Zero-Trust Private Mesh) |
+| Persistence | Native ZFS Encryption (AES-256-GCM) |
+
+------------------------------
+## 2. Cryptographic File Manifest (v1.0)
+These SHA-256 hashes represent the "Golden State" of the Aetheris logic. Any deviation indicates a breach or unauthorized modification.
+
+| File Path | Purpose | Integrity Hash (Example) |
+|---|---|---|
+| /core/main.rs | Rust Orchestrator & Proxy | 3f8a...e9b2 |
+| /core/ui/index.html | Zero-JS Dashboard | a1b2...c3d4 |
+| /config/policy.rego | OPA Authorization Logic | e5f6...g7h8 |
+| /ghost/sim_ui.sh | Honeypot Deception Logic | i9j0...k1l2 |
+| /scripts/vault_sync.sh | Encrypted ZFS Replicator | m3n4...o5p6 |
+
+------------------------------
+## 3. The "Ghost-Gate" Isolation Logic
+The system is configured to maintain two distinct logical planes:
+
+   1. The Sovereign Plane (10.0.0.1:8080): Accessible only to verified, non-flagged WireGuard Peers. It connects directly to the ChromaDB and the Encrypted ZFS Vault.
+   2. The Ghost Plane (10.0.0.1:8081): A containerized sandbox. All traffic from "Flagged" peers is redirected here. It contains Canary Tokens and no physical access to the encryption master-key.
+
+------------------------------
+## 4. Final Execution Command
+To "ignite" the full stack as defined in this manifest:
+
+# Verify Environment -> Initialize Keys -> Build Mesh -> Start Sentinel
+./bootstrap.sh && ./verification.sh && docker compose -f compose.yaml -f docker-compose.ghost.yaml up -d
+
+## Aetheris is now Fully Operational.
+The system is invisible to the public internet, possesses semantic intelligence for your private files, and is self-healing through ZFS snapshots and honeypot isolation.
+Would you like to generate the "Kill-Switch" script to instantly wipe the local keys and unmount the vault in the event of physical seizure?
+

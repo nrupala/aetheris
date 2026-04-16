@@ -1,0 +1,79 @@
+To achieve "stronger than Cloudflare" security for your persistent storage, we prioritize Native ZFS Encryption over Btrfs/LUKS for the "Aetheris" core. While Btrfs requires a separate LUKS layer, ZFS integrates encryption directly into the filesystem. This allows the "Aetheris" Rust orchestrator to replicate, snapshot, and send encrypted data to untrusted nodes without ever needing to decrypt it on those nodes. 
+The "Aetheris" ZFS Encryption Script (vault_setup.sh)
+This script initializes a hardened, encrypted vault using AES-256-GCM with a secure key-loading mechanism.
+bash
+
+#!/usr/bin/env bash
+# Aetheris Persistent Vault Provisioner (FOSS-ONLY)
+
+set -e
+
+POOL_NAME="aetheris_vault"
+DATASET_NAME="${POOL_NAME}/secure_data"
+KEY_FILE="/root/.aetheris_key"
+
+echo "🛡️ Provisioning Zero-Trust Encrypted Persistent Vault..."
+
+# 1. Generate a high-entropy 32-byte key if it doesn't exist
+if [ ! -f "$KEY_FILE" ]; then
+    echo "🔑 Generating master vault key..."
+    openssl rand -hex 32 > "$KEY_FILE"
+    chmod 600 "$KEY_FILE"
+fi
+
+# 2. Create the ZFS Pool with basic integrity checks
+# Using /dev/disk/by-id/ to ensure persistence regardless of port changes
+# Replace DISK_ID with your actual disk ID (found via 'lsblk')
+DISK_ID="YOUR_DISK_ID_HERE" 
+
+if ! zpool list "$POOL_NAME" > /dev/null 2>&1; then
+    zpool create -f "$POOL_NAME" "/dev/disk/by-id/${DISK_ID}"
+fi
+
+# 3. Create the Native Encrypted Dataset
+# -o encryption=on: Defaults to AES-256-GCM
+# -o keyformat=hex: Matches our hex keyfile
+# -o keylocation=file://: Automated loading for the container core
+if ! zfs list "$DATASET_NAME" > /dev/null 2>&1; then
+    zfs create \
+        -o encryption=on \
+        -o keyformat=hex \
+        -o keylocation="file://${KEY_FILE}" \
+        -o compression=lz4 \
+        -o xattr=sa \
+        -o acltype=posixacl \
+        "$DATASET_NAME"
+    echo "✅ Vault created and encrypted."
+else
+    echo "🔓 Vault already exists. Loading keys..."
+    zfs load-key "$DATASET_NAME"
+    zfs mount "$DATASET_NAME"
+fi
+
+echo "🚀 Vault is online and persistent."
+
+Use code with caution.
+Why This Beats Cloudflare/Standard Cloud
+
+    Zero-Knowledge Replication: You can use zfs send to back up this encrypted vault to a secondary node or an untrusted cloud provider (like AWS S3 or a friend's Aetheris node) while the data stays encrypted with your key.
+    Atomic Immunity: Unlike standard filesystems that can "corrupt" during a power failure while writing, ZFS’s Copy-on-Write (CoW) architecture ensures a write is either 100% finished or never happened.
+    Hardware Independence: You can take your physical drive, plug it into a totally different machine running the Aetheris container, and as long as you have the key_file, your vault mounts instantly. 
+
+Automating Persistent Mounting 
+To ensure this vault is ready when your Rust container starts, add a systemd service on your host:
+ini
+
+[Unit]
+Description=Aetheris ZFS Vault Mounter
+After=zfs-import.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/zfs load-key -a
+ExecStart=/usr/sbin/zfs mount -a
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+
+Use code with caution.

@@ -15,18 +15,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
+          targets: x86_64-unknown-linux-gnu
+      
+      - name: Install OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
       
       - name: Build Release
         run: |
           cd core
-          cargo build --release --target x86_64-unknown-linux-musl
+          cargo build --release
       
       - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
           name: aetheris-core
-          path: core/target/x86_64-unknown-linux-musl/release/aetheris-core
+          path: core/target/release/aetheris-core
 
   build-docker:
     runs-on: ubuntu-latest
@@ -49,6 +52,9 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       
@@ -61,6 +67,6 @@ jobs:
           output: 'trivy-results.sarif'
       
       - name: Upload to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'

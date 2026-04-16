@@ -1,0 +1,66 @@
+To support machine interaction and human configuration within your environment, I have separated the Sync Orchestration (YAML) and the Machine State (JSON).
+1. Sync Configuration (config.yaml)
+This file is for high-level orchestration and human-readable policy management. It defines how the mesh behaves.
+yaml
+
+# Aetheris Sync Orchestration Configuration
+# Location: codespace/sync_instructions/config.yaml
+
+sync_policy:
+  version: "1.0"
+  encryption_layer: "wireguard-tls"
+  conflict_resolution: "latest_version"
+  scan_interval: "30s"
+
+nodes:
+  hub:
+    id: "AETHERIS-HUB-01"
+    ip: "10.0.0.1"
+    role: "introducer"
+    paths: ["/data/vault/sync"]
+  mobile:
+    id: "PEER-MOBILE-02"
+    ip: "10.0.0.2"
+    sync_mode: "on-demand"
+  desktop:
+    id: "PEER-DESKTOP-03"
+    ip: "10.0.0.3"
+    sync_mode: "full-mirror"
+
+security:
+  global_discovery: false
+  local_discovery: true
+  relaying: false
+  allow_untrusted_peers: false
+
+Use code with caution.
+2. Machine Interaction State (state.json)
+This file is for active tracking and programmatic consumption by your Rust Core or AI agent.
+json
+
+{
+  "sync_state": {
+    "last_pulse": "2026-04-14T20:32:00Z",
+    "active_peers": 3,
+    "vault_status": "encrypted_mounted"
+  },
+  "endpoints": {
+    "upload": "http://10.0.0",
+    "download": "http://10.0.0",
+    "metrics": "http://10.0.0"
+  },
+  "flags": {
+    "auto_index_on_sync": true,
+    "snapshot_after_sync": true,
+    "notify_on_conflict": true
+  }
+}
+
+Use code with caution.
+Codespace Interaction Logic
+
+    YAML for Logic: Use the Syncthing Configuration to modify device-specific paths or synchronization modes manually.
+    JSON for Runtime: The Rust Core can use the Syncthing REST API to push the state from state.json into the actual running service without manual GUI interaction.
+    Separation: By default, Syncthing stores its database and configuration in the same directory, typically $HOME/.config/syncthing on Linux, but these can be moved separately for performance or organizational reasons. 
+
+https://docs.syncthing.net/users/config.html

@@ -1,0 +1,71 @@
+While Cloudflare offers "Point-in-Time Recovery" for their databases, it's still on their hardware. With zrepl, you have atomic versioning of your entire file system. If a "bad actor" or a "bad AI agent" deletes a file, you can roll back the entire vault in milliseconds.
+1. The Zrepl Configuration (/etc/zrepl/zrepl.yml)
+This configures a "Snapshot & Keep" policy. It creates high-frequency snapshots and prunes them over time to save space (Grandfather-Father-Son rotation).
+yaml
+
+jobs:
+  - name: aetheris_vault_snapshots
+    type: snap
+    datasets:
+      - "aetheris_vault/secure_data<" # Recursively snapshot the vault
+    snapshotting:
+      type: periodic
+      prefix: zrepl_
+      interval: 15m # Snapshot every 15 minutes (Recovery Point Objective)
+    pruning:
+      keep:
+        # Keep all snapshots for the last hour
+        - type: last_n
+          count: 4
+        # Keep 1 snapshot per hour for the last day
+        - type: grid
+          grid: 1x1h | 24x1h
+          regex: "^zrepl_.*"
+        # Keep 1 snapshot per day for the last 30 days
+        - type: grid
+          grid: 1x24h | 30x24h
+          regex: "^zrepl_.*"
+
+Use code with caution.
+2. The "Time Travel" Recovery Script (vault_rollback.sh)
+This is your emergency "Undo" button. It lists available snapshots and lets you revert the persistent drive instantly.
+bash
+
+#!/usr/bin/env bash
+# Aetheris Snapshot Recovery Tool
+
+DATASET="aetheris_vault/secure_data"
+
+echo "🕒 Available Recovery Points for Aetheris Vault:"
+zfs list -t snapshot -o name,creation -s creation | grep "$DATASET"
+
+read -p "Enter the snapshot name to rollback to (e.g., @zrepl_...): " SNAP_NAME
+
+# Safety check: Unmount before rollback
+zfs unmount "$DATASET"
+zfs rollback -r "$SNAP_NAME"
+zfs mount "$DATASET"
+
+echo "✅ Vault successfully reverted to $SNAP_NAME."
+
+Use code with caution.
+3. Making it Persistent & Secure
+Add the zrepl service to your compose.yaml (or run it as a host binary) to ensure the background task never stops.
+yaml
+
+  zrepl:
+    image: zrepl/zrepl:latest
+    container_name: aetheris_snapshot_daemon
+    volumes:
+      - /etc/zrepl:/etc/zrepl:ro
+      - /dev/zfs:/dev/zfs
+    # Zrepl needs access to the ZFS control device
+    privileged: true 
+    restart: unless-stopped
+
+Use code with caution.
+The "Zero-Trust" Security Advantage
+
+    Immutable Snapshots: Once a snapshot is taken, it is read-only. Even if a container is compromised, it cannot "edit" the history of your snapshots.
+    Encrypted Send: You can configure zrepl to send these snapshots to a remote off-site FOSS node. Because we used Native ZFS Encryption, the remote side receives raw encrypted blocks. They cannot see your data, but they can store your backups.
+    Low Latency: Since ZFS is built into the kernel, taking a snapshot takes less than a second, regardless of whether your vault is 10GB or 10TB.

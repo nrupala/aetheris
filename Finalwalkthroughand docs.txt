@@ -1,0 +1,58 @@
+The Aetheris system is now architecturally complete. This final walkthrough provides the operational manual for maintaining your "Sovereign AI Mesh" and ensures you can rotate keys or recover data without compromising your zero-trust posture.
+## 1. Key Rotation Procedures
+Regularly rotating keys is a critical defense-in-depth measure. A 90-day rotation schedule is recommended for static keys.
+## A. ZFS Wrapping Key Rotation
+You can change the user-facing "Wrapping Key" (passphrase or keyfile) without re-encrypting the data.
+
+   1. Ensure the current key is loaded: zfs load-key aetheris_vault/secure_data.
+   2. Rotate the key:
+   
+   # Rotate to a new hex keyfile
+   openssl rand -hex 32 > /root/.aetheris_new_key
+   zfs change-key -o keylocation=file:///root/.aetheris_new_key aetheris_vault/secure_data
+   
+   3. Update your Rust Core environment variables or secrets manager to point to the new location. [1, 2] 
+
+## B. WireGuard Peer Rotation
+To rotate a client's access without a complete mesh outage:
+
+   1. Generate New Pair: Run wg genkey for the client.
+   2. Update Peers First: Update the Aetheris Hub config with the new Public Key.
+   3. Update Client: Swap the Private Key on the mobile/desktop device.
+   4. PSK Rotation: Always rotate the Pre-Shared Key (PSK) simultaneously for post-quantum resistance. [3, 4, 5] 
+
+------------------------------
+## 2. Deployment Checklist (The "Sovereign" Final Pass)
+
+| Category | Item | Verification Command |
+|---|---|---|
+| Network | UDP Stealth | nmap -sU -p 51820 <Host_IP> (Should show `open |
+| Security | Zero-Trust | curl -I http://10.0.0 (Must return 403 Forbidden without peer ID) |
+| Storage | Snapshotting | zfs list -t snapshot (Verify at least one @zrepl_ exists) |
+| Intelligence | Semantic Search | Ask the UI: "Find the test file" (Verify ChromaDB returns hits) |
+
+------------------------------
+## 3. Maintenance & Recovery Docs## Disaster Recovery (Total Hardware Failure)
+
+   1. Restore ZFS Stream: cat backup.zfs | zfs receive -F aetheris_vault/secure_data.
+   2. Load Master Key: Place your .aetheris_key backup in /root/.
+   3. Unlock: zfs load-key aetheris_vault/secure_data && zfs mount aetheris_vault/secure_data.
+
+## Updating the "Distroless" Core
+Because the container is immutable, use this one-liner to pull security patches:
+
+docker compose pull && docker compose up -d --build
+
+## Final Documentation Summary
+
+* Access: Exclusively via WireGuard (10.0.0.0/24 subnet).
+* Logs: Audit trails are located in vault/audit.log (encrypted).
+* Monitoring: Real-time health is visible on the Grafana Sentinel dashboard.
+
+The system is now fully sovereign. Do you wish to perform a simulated intrusion test to verify the auto-banning logic of the Security Watcher?
+
+[1] [https://openzfs.github.io](https://openzfs.github.io/openzfs-docs/man/master/8/zfs-change-key.8.html)
+[2] [https://docs.oracle.com](https://docs.oracle.com/en/operating-systems/solaris/oracle-solaris/11.4/manage-zfs/changing-encrypted-zfs-file-systems-keys.html#:~:text=You%20can%20change%20an%20encrypted%20file%20system%27s,passphrase%20for%20%27tank/home/megr%27:%20xxxxxxxx%20Enter%20again:%20xxxxxxxx.)
+[3] [https://contabo.com](https://contabo.com/blog/hardening-your-wireguard-security-a-comprehensive-guide/)
+[4] [https://oneuptime.com](https://oneuptime.com/blog/post/2026-03-03-rotate-wireguard-keys-on-talos-linux/view)
+[5] [https://www.procustodibus.com](https://www.procustodibus.com/blog/2021/09/wireguard-key-rotation/)

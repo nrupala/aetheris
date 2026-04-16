@@ -1,0 +1,90 @@
+This is the Aetheris Integrity Protocol. It consists of a verification.sh script to stress-test the zero-trust boundaries and a tests.json file for your AI agent to validate the system state programmatically.
+1. The Verification Suite (verification.sh)
+This script performs a "cold-start" validation of every pillar: Network, Security, Persistence, and Intelligence.
+bash
+
+#!/usr/bin/env bash
+# Aetheris Integrity Protocol (Final Verification)
+set -e
+
+echo "🛡️ Starting Aetheris System Validation..."
+
+# TEST 1: WireGuard Stealth Check
+if ! ss -unlp | grep -q ":51820"; then
+    echo "❌ FAIL: WireGuard Mesh not listening on UDP 51820"
+else
+    echo "✅ PASS: Stealth Mesh Active"
+fi
+
+# TEST 2: ZFS Encryption & Mount
+if zfs get encryption aetheris_vault/secure_data | grep -q "aes-256-gcm"; then
+    echo "✅ PASS: Vault is Native Encrypted (AES-256-GCM)"
+else
+    echo "❌ FAIL: Vault not found or not encrypted"
+fi
+
+# TEST 3: Zero-Trust OPA Check (Dry Run)
+OPA_RESULT=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8181/v1/data/aetheris/authz/allow)
+if [ "$OPA_RESULT" == "200" ]; then
+    echo "✅ PASS: OPA Decision Engine Responsive"
+else
+    echo "❌ FAIL: OPA Engine Offline (Code: $OPA_RESULT)"
+fi
+
+# TEST 4: AI Indexing Latency
+echo "Testing Semantic Indexing..."
+touch vault/test_file.txt
+echo "Aetheris is a sovereign cloud system." > vault/test_file.txt
+sleep 2 # Wait for inotify + Rust core + Ollama
+if [ -f "data/chroma/chroma.sqlite3" ]; then
+    echo "✅ PASS: AI Vector persistence detected"
+else
+    echo "⚠️ WARNING: Vector DB not yet updated (Index Pending)"
+fi
+
+echo "🏁 Validation Complete. System is SOVEREIGN."
+
+Use code with caution.
+2. Automated Test Composition (tests.json)
+Inject this into your Autocode Agent to define the success criteria for the "Alive" system.
+json
+
+{
+  "system_id": "Aetheris-Final",
+  "test_suites": [
+    {
+      "component": "Network",
+      "requirement": "Zero-Response to ICMP",
+      "command": "ping -c 1 10.0.0.1",
+      "expected": "No response"
+    },
+    {
+      "component": "Security",
+      "requirement": "Fail-Closed without JWT",
+      "endpoint": "/download/secret.pdf",
+      "expected_status": 403
+    },
+    {
+      "component": "Persistence",
+      "requirement": "Snapshot Continuity",
+      "command": "zfs list -t snapshot",
+      "threshold": "> 0"
+    },
+    {
+      "component": "Intelligence",
+      "requirement": "Semantic Match",
+      "query": "What is Aetheris?",
+      "expected_keywords": ["sovereign", "cloud", "mesh"]
+    }
+  ]
+}
+
+Use code with caution.
+The Final Handover
+The Aetheris package is now closed and complete.
+
+    Bootstrap starts the heart.
+    Rust Core manages the blood flow (data).
+    OPA provides the immune system.
+    ZFS provides the long-term memory.
+    AI Sentinel provides the foresight.

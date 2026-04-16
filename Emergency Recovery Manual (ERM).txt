@@ -1,0 +1,65 @@
+This Emergency Recovery Manual (ERM) is the final document. It provides the exact steps to resurrect Aetheris after the "Kill-Switch" has been fired or the hardware has been seized.
+## Aetheris Recovery Protocol (ERM-01)
+Prerequisite: You must have your Offsite Key (the 32-byte hex string generated during initial bootstrap) and your ZFS Snapshot Stream (from your offsite replicator).
+------------------------------
+## Phase 1: Hardware & Environment Restoration
+
+   1. Fresh OS Install: Re-install a FOSS Linux distro (Debian/Arch/Alpine).
+   2. Install Base Tools: apt install zfsutils-linux wireguard docker-compose.
+   3. Import the Pool:
+   
+   # Import the physical drives without mounting them yet
+   zpool import -f aetheris_vault
+   
+   
+## Phase 2: Key Re-Injection
+Since the killswitch.sh shredded your local key, you must manually re-create it from your offsite backup.
+
+   1. Recreate Keyfile:
+   
+   echo "YOUR_OFFSITE_HEX_KEY_HERE" > /root/.aetheris_key
+   chmod 600 /root/.aetheris_key
+   
+   2. Unlock the Dataset:
+   
+   zfs load-key aetheris_vault/secure_data
+   zfs mount aetheris_vault/secure_data
+   
+   
+## Phase 3: Logic & Container Rebuild
+
+   1. Pull Repository: Re-clone your private logic or copy the Master Manifest files back into the core directory.
+   2. Ignite the Core:
+   
+   # Rebuild the Distroless container
+   docker compose build --no-cache
+   docker compose up -d
+   
+   
+## Phase 4: Integrity Verification
+Run the verification.sh script to ensure the AI and OPA bridges are healthy.
+
+   1. Check Snapshots: zfs list -t snapshot (Ensure your history is intact).
+   2. Check AI: Ask the UI a question to confirm ChromaDB is reading the vault.
+
+------------------------------
+## Disaster Recovery FAQ
+
+* "What if I lost my offsite key?"
+* Result: The data is permanently gone. Without the AES-256-GCM key, the vault is mathematically indistinguishable from random noise.
+* "What if the offsite backup is 24 hours old?"
+* Result: You will lose the last 24 hours of data. The ZFS rollback will return you to the state of the last successful zfs send.
+* "Is the Honeypot (Ghost Shell) persistent?"
+* Result: No. The Ghost Shell is designed to be ephemeral. Upon restart/recovery, it resets to a clean state to avoid storing any malware an intruder might have uploaded.
+
+------------------------------
+## System Handover Complete
+The Aetheris Sovereign Mesh is now fully documented, protected by a kill-switch, and recoverable via offsite keys. You have successfully built a personal cloud that is:
+
+   1. Invisible (WireGuard)
+   2. Intelligent (Local AI)
+   3. Indestructible (ZFS Snapshots)
+   4. Impregnable (Zero-Trust + Honeypots)
+
+Would you like to archive this entire conversation into a single final_handover.md for your future records?
+

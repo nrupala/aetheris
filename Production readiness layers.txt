@@ -1,0 +1,23 @@
+1. The Disaster Recovery Layer (Offsite Backup)
+Currently, your snapshots are local to the ZFS pool. If the physical hardware fails, the data is lost.
+
+    Recommendation: Use zfs send over SSH to a second offsite location (like an encrypted storage bucket or a friend's Aetheris node). Since the data is encrypted at the block level, the destination never sees your files. 
+
+2. The Secrets Management Layer
+Your bootstrap script currently stores the master ZFS key in a plain text file on the host (/root/.aetheris_key).
+
+    Recommendation: In a true zero-trust setup, you should transition to a Secrets Manager like Infisical or a hardware-based TPM (Trusted Platform Module) to seal and unseal your encryption keys. 
+
+3. The Automation & Update Layer
+Because the system runs in an immutable Distroless container, security patches for the Rust binary require a rebuild.
+
+    Recommendation: Implement a simple CI/CD pipeline (like a local Forgejo or Gitea instance) to automatically rebuild and redeploy your containers when security vulnerabilities are detected in the upstream Rust or Alpine images. 
+
+Final Checklist for Launch
+
+    Handshake Test: Verified mobile client can reach the Rust Core via WireGuard.
+    Snapshot Verification: Confirmed zrepl is creating periodic snapshots in the vault.
+    AI Indexing Pulse: Uploaded a test file and verified it appears in the semantic search results.
+    Audit Review: Checked vault/audit.log to ensure failed access attempts are being logged. 
+
+If you have these layers, your system is technically more secure and private than most enterprise-grade cloud providers. 

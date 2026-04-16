@@ -1,0 +1,62 @@
+For the Aetheris Sentinel dashboard, we use a simplified JSON model that maps the custom Rust metrics and AI predictions into a high-performance VictoriaMetrics data source. 
+Aetheris Health Dashboard JSON
+This JSON model focuses on three critical zones: Security Immunity, Storage Health, and AI Predictive Status.
+json
+
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "title": "Aetheris Mesh Security Status",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(aetheris_security_violations_total)", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "range", "from": 0, "to": 5, "text": "SECURE", "color": "green" },
+            { "type": "range", "from": 6, "to": 20, "text": "WARNING", "color": "yellow" },
+            { "type": "range", "from": 21, "to": 100, "text": "CRITICAL", "color": "red" }
+          ]
+        }
+      }
+    },
+    {
+      "title": "AI Sentinel: Threat Prediction",
+      "type": "state-timeline",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "aetheris_ai_prediction_score", "refId": "B" }
+      ],
+      "options": { "align": "center", "mergeValues": true }
+    },
+    {
+      "title": "ZFS Vault Persistence (Bytes)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "aetheris_vault_usage_bytes", "legendFormat": "Vault Usage" }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "timezone": "browser",
+  "title": "Aetheris Sentinel"
+}
+
+Use code with caution.
+How to Import this into Grafana
+
+    Open Grafana: Navigate to your dashboard at http://10.0.0.1:3000 over the WireGuard mesh.
+    Import: Go to Dashboards > New > Import.
+    Paste: Copy the JSON code above and paste it into the Import via panel JSON text box.
+    Connect: Select your VictoriaMetrics instance as the data source. 
+
+Why this Dashboard is "Next-Gen"
+
+    Predictive Color Mapping: The "Security Status" panel doesn't just show a number; it translates raw violation counts into human-readable states.
+    AI State Timeline: The state-timeline panel visualizes how your local AI agent's "Predictions" change over time, helping you identify periodic attack patterns or hardware degradation.
+    Lightweight: This entire dashboard consists of only three highly-optimized queries, ensuring it loads instantly even on mobile devices via the WireGuard tunnel. 

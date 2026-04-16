@@ -1,0 +1,48 @@
+To keep the system "stronger than Cloudflare," we avoid public DNS or central relays. This config uses Pre-Shared Keys (PSK) for an extra layer of post-quantum resistance on top of the standard Curve25519 handshake.
+1. Server-Side Peer Entry (config/wireguard/wg0.conf)
+Add this to your server's WireGuard configuration to "allow" your device into the vault.
+ini
+
+[Peer]
+PublicKey = <CLIENT_PUBLIC_KEY>
+PresharedKey = <GENERATED_PSK>
+AllowedIPs = 10.0.0.2/32  # The internal IP of your laptop/phone
+
+Use code with caution.
+2. Client-Side Config (client.conf)
+This is the file you import into the WireGuard app on your phone or laptop.
+ini
+
+[Interface]
+PrivateKey = <CLIENT_PRIVATE_KEY>
+Address = 10.0.0.2/32
+DNS = 1.1.1.1 # Or your local FOSS DNS like Pi-hole
+
+[Peer]
+PublicKey = <SERVER_PUBLIC_KEY>
+PresharedKey = <GENERATED_PSK>
+# The Public IP and Port of your Aetheris Node
+Endpoint = your.public.ip.here:51820 
+# Keeps the connection alive through NAT firewalls
+PersistentKeepalive = 25 
+# Route ONLY Aetheris traffic through the mesh (Split Tunnel)
+# Change to 0.0.0.0/0 to route ALL internet traffic through your vault
+AllowedIPs = 10.0.0.0/24 
+
+Use code with caution.
+3. Generating the Keys (FOSS Tooling)
+Run these commands on your machine to generate the strings needed for the templates above:
+bash
+
+# Generate Client Keys
+wg genkey | tee client_private.key | wg pubkey > client_public.key
+
+# Generate the Post-Quantum PSK (The "Cloudflare-Killer" extra layer)
+wg genpsk > aetheris.psk
+
+Use code with caution.
+Why this is Secure
+
+    UDP Stealth: The server will not respond to any packets unless they are correctly signed by the client_private.key. To a port scanner, your server looks completely offline.
+    No MITM: Unlike a Cloudflare Tunnel, no third party sees your traffic. It is a direct, encrypted pipe from your device to your ZFS vault.
+    Persistence: The PersistentKeepalive ensures that even if you switch from Wi-Fi to 5G, your "Aetheris" drive stays mounted and the Rust Core remains reachable at 10.0.0.1.

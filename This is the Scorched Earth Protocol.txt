@@ -1,0 +1,44 @@
+This is the "Scorched Earth" Protocol. This script is designed for extreme emergencies where physical or remote compromise is imminent. It doesn't just stop services; it purges the active encryption keys from RAM, unmounts the datasets, and wipes the keyfiles from the drive using a multi-pass secure overwrite.
+## Aetheris Kill-Switch (killswitch.sh)
+
+#!/usr/bin/env bash# AETHERIS EMERGENCY PURGE PROTOCOL# WARNING: This action is IRREVERSIBLE for the current session.# Data recovery requires an offsite/offline backup of the master key.
+set -e
+
+VAULT_POOL="aetheris_vault"
+KEY_FILE="/root/.aetheris_key"
+
+echo "⚠️ CRITICAL: INITIATING EMERGENCY DATA LOCKDOWN..."
+# 1. Kill the Core Orchestrator and Mesh immediately# This stops all active data streams and locks the API
+docker compose down --volumes --timeout 0
+systemctl stop wireguard@wg0
+# 2. Unmount the Vault and Eject Keys from RAM# 'zfs unmount -f' forces the close of all open file handles# 'zfs unload-key' purges the AES-256-GCM keys from kernel memory
+echo "🔒 Purging encryption keys from kernel memory..."
+zfs unmount -f "$VAULT_POOL/secure_data" || true
+zfs unload-key "$VAULT_POOL/secure_data"
+# 3. Shred the Local Keyfile# Uses 'shred' to overwrite the keyfile with random data (3 passes) # before deleting to prevent forensic recovery from the SSD/HDD.if [ -f "$KEY_FILE" ]; then
+    echo "🧨 Shredding local master key..."
+    shred -u -n 3 -z "$KEY_FILE"fi
+# 4. Clear Kernel Logs and Bash History# Removes traces of commands that might have contained sensitive paths or metadata
+echo "🧹 Clearing forensic traces..."
+echo > /var/log/auth.log
+echo > /var/log/kern.log
+history -c
+
+echo "✅ DATA SECURED. Vault is now a black box."
+echo "To recover, you must manually provide the OFFSITE backup key."
+
+## Operational Deployment
+To make this kill-switch useful in a real-world scenario, you can trigger it in three ways:
+
+   1. Local "Panic Button": Map this script to a specific hardware key or a hidden physical button on your server.
+   2. Remote "Dead Man's Switch": Set a cron job that checks for the existence of a "heartbeat" file on a remote FOSS node. If the file is missing (meaning you haven't checked in), the script runs.
+   3. Network Trigger: Create a specific, hidden WireGuard Peer ID that, when it sends a single "Ping" packet to a high port, triggers this script via a simple nc listener.
+
+## Why this is "Sovereign" Security
+
+* Volatile Memory Purge: By unloading the ZFS key, you ensure that even if the server is kept powered on during a seizure, the data cannot be read from RAM.
+* Anti-Forensic Wiping: Standard deletion (rm) leaves data on the platter. shred ensures the bits are physically scrambled.
+* Total Blackout: By stopping WireGuard, the system disappears from the mesh instantly.
+
+The Aetheris "Ghost-Mesh" is now fully protected. Would you like to finalize the Emergency Recovery Manual to ensure you can rebuild the system from an offsite key?
+

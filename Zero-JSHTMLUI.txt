@@ -1,0 +1,83 @@
+To keep this system ultra-fast and secure, the Rust core will serve SSR (Server-Side Rendered) HTML. We use Standard CSS for the layout, avoiding all JavaScript. This prevents XSS (Cross-Site Scripting) attacks and ensures the UI loads instantly even on low-bandwidth WireGuard connections.
+1. The Rust Handler (in main.rs)
+Add a simple function to your Rust core to inject data into a raw HTML string. No external templating engine is required for a system this lean.
+rust
+
+fn render_dashboard(files: Vec<String>) -> String {
+    let mut file_list_html = String::new();
+    for file in files {
+        file_list_html.push_str(&format!(
+            "<li><span>{}</span> <a href='/download/{}' class='btn'>Download</a></li>", 
+            file, file
+        ));
+    }
+
+    format!(
+        include_str!("ui/index.html"),
+        file_list = file_list_html
+    )
+}
+
+Use code with caution.
+2. The UI Template (ui/index.html)
+This uses a Modern-Minimalist CSS approach (System fonts, CSS Grid). It looks like a high-end SaaS but is just a single static file.
+html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aetheris // Zero-Cloud</title>
+    <style>
+        :root { --bg: #0d1117; --text: #c9d1d9; --accent: #58a6ff; --card: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
+               background: var(--bg); color: var(--text); margin: 0; padding: 2rem; line-height: 1.5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { border-bottom: 1px solid #30363d; padding-bottom: 10px; font-weight: 300; letter-spacing: -1px; }
+        
+        /* THE SEMANTIC SEARCH BAR (Just a standard HTML Form) */
+        .search-box { background: var(--card); padding: 1.5rem; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 2rem; }
+        input[type="text"] { width: 80%; background: #010409; border: 1px solid #30363d; color: white; padding: 10px; border-radius: 6px; }
+        
+        /* FILE LISTING */
+        ul { list-style: none; padding: 0; }
+        li { background: var(--card); margin-bottom: 8px; padding: 12px; border-radius: 6px; 
+             display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
+        li:hover { border-color: var(--accent); }
+        .btn { text-decoration: none; color: var(--accent); font-size: 0.9rem; border: 1px solid var(--accent); padding: 4px 12px; border-radius: 4px; }
+        .btn:hover { background: var(--accent); color: white; }
+        
+        .status { font-size: 0.8rem; color: #8b949e; margin-top: 2rem; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Aetheris Core</h1>
+        
+        <div class="search-box">
+            <form action="/search" method="GET">
+                <input type="text" name="q" placeholder="Ask your data anything (e.g. 'tax returns 2023')..." required>
+                <button type="submit" class="btn">Search</button>
+            </form>
+        </div>
+
+        <h3>Recent Vault Activity</h3>
+        <ul>
+            {file_list}
+        </ul>
+
+        <div class="status">
+            Connected via <strong>WireGuard Mesh</strong> | Zero-Trust Policy Active
+        </div>
+    </div>
+</body>
+</html>
+
+Use code with caution.
+Why this wins in the AI Age
+
+    Semantic Search Form: The <form> tag sends the query directly to your Rust backend. Rust then queries the ChromaDB vector store we set up in the Compose file. No complex API calls or JS fetch() needed.
+    Zero-Trust Identity: Because the UI is served through the WireGuard tunnel, the Rust core already knows exactly who you are based on your Peer ID. There is no "Login Screen" because the network layer is the login.
+    Speed: There are zero script tags. The page renders the moment the first byte arrives.
+    Bot Proof: Since there is no JavaScript to execute, traditional scrapers and automated bots can't interact with the dynamic AI features easily.
