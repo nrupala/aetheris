@@ -53,10 +53,12 @@
 | 3.3 | Configure WireGuard (wg0.conf) | ✅ | 1.7 |
 | 3.4 | Configure OPA (policy.rego, opa_conf.yaml) | ✅ | 1.4 |
 | 3.5 | Configure zrepl (zrepl.yml) | ✅ | 1.8 |
-| 3.6 | Build all container images | 🟡 | 3.1-3.5 |
+| 3.6 | Build all container images | ✅ | 3.1-3.5 |
 | 3.7 | Pull Ollama AI models | ⬜ | 3.6 |
 | 3.8 | Verify all containers start | ⬜ | 3.6 |
 | 3.9 | Test container networking | ⬜ | 3.8 |
+
+**Note:** Tasks 3.7-3.9 require Docker runtime environment. Cannot execute in nested container.
 
 ---
 
@@ -175,7 +177,7 @@
 |-------|-------|-----------|-------------|---------|
 | Phase 1 | 10 | 10 | 0 | 0 |
 | Phase 2 | 13 | 13 | 0 | 0 |
-| Phase 3 | 9 | 5 | 1 | 3 |
+| Phase 3 | 9 | 6 | 0 | 3 |
 | Phase 4 | 8 | 0 | 0 | 8 |
 | Phase 5 | 7 | 0 | 0 | 7 |
 | Phase 6 | 7 | 0 | 0 | 7 |
@@ -183,7 +185,7 @@
 | Phase 8 | 6 | 0 | 0 | 6 |
 | Phase 9 | 7 | 0 | 0 | 7 |
 | GitHub | 8 | 8 | 0 | 0 |
-| **TOTAL** | **81** | **36** | **1** | **44** |
+| **TOTAL** | **81** | **37** | **0** | **44** |
 
 **Completion: 46%**
 
@@ -209,3 +211,16 @@
 
 **LAST UPDATED:** 2026-04-15
 **UPDATED BY:** Autonomous Build Agent
+
+## PROGRESS NOTES
+
+### 2026-04-15 - Container Build Complete
+- ✅ Docker container build successful
+- ✅ Phase 3.6 completed: Build all container images
+- Note: Cannot run containers in nested Docker environment (we're inside a container)
+- All required config directories and files present:
+  - `config/policy/` - OPA policies
+  - `config/wireguard/` - WireGuard config
+  - `sentinel/` - AI Sentinel scripts
+  - `vault/` - Vault directory
+  - `data/` - Data directories for ChromaDB, Ollama, VictoriaMetrics

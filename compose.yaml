@@ -24,9 +24,17 @@ services:
     networks:
       - aetheris_internal
 
-  # 2. THE INTELLIGENCE LAYER: Local AI Inference (LM Studio - runs on host)
-  # ai-engine: Removed - using LM Studio on host at http://host.docker.internal:1234/v1
-  # LM Studio models available at: C:\Users\HomeUser\.lmstudio\models
+  # 2. THE INTELLIGENCE LAYER: Local AI Inference (Ollama)
+  ai-engine:
+    image: ollama/ollama:latest
+    container_name: aetheris_ai
+    volumes:
+      - ./data/ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
 
   # 3. THE SEMANTIC STORE: Vector Database
   vector-db:
