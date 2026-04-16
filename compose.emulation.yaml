@@ -82,7 +82,7 @@ services:
   # 4. ENCRYPTED VAULT (Zero-Knowledge)
   # ============================================
   encrypted-vault:
-    image: vault:latest
+    image: hashicorp/vault:1.15
     container_name: aetheris_vault
     hostname: vault
     environment:
