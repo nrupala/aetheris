@@ -1,0 +1,53 @@
+# ZFS Emulation Configuration
+# Simulates ZFS pool for bare metal testing
+
+pool_name: aetheris_pool
+encryption:
+  algorithm: AES-256-GCM
+  key_source: /keys/zfs_key.gpg
+  key_rotation: 90d
+
+dataset_configs:
+  - name: vault
+    compression: lz4
+    encryption: aes-256-gcm
+    recordsize: 128K
+    atime: off
+    mountpoint: /pool/vault
+
+  - name: snapshots
+    compression: gzip
+    encryption: aes-256-gcm
+    readonly: on
+    snapshot_interval: 1h
+
+  - name: backup
+    compression: lz4
+    encryption: aes-256-gcm
+    recordsize: 1M
+    sync: disabled
+
+snapshots:
+  auto_snapshots:
+    enabled: true
+    interval: hourly
+    retention:
+      hourly: 24
+      daily: 7
+      weekly: 4
+
+replication:
+  remote_endpoints:
+    - name: offsite_backup
+      address: 10.0.10.100
+      dataset: vault
+      bandwidth_limit: 100Mbps
+
+scrub:
+  schedule: "0 3 * * 0"
+  priority: low
+
+health_checks:
+  enabled: true
+  check_interval: 1h
+  alert_on_errors: true

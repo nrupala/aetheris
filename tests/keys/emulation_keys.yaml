@@ -1,0 +1,33 @@
+# Aetheris Bare Metal Emulation Test Keys
+# For testing only - DO NOT USE IN PRODUCTION
+
+# ZFS Encryption Key (simulated)
+zfs_encryption_key: "aetheris-test-zfs-key-32bytes!!"
+
+# Vault Unseal Keys (simulated - 5 keys, need 3 to unseal)
+vault_unseal_keys:
+  - key1: "test-unseal-key-1-AAAAAAAAAAAAAAAA"
+  - key2: "test-unseal-key-2-BBBBBBBBBBBBBBBB"
+  - key3: "test-unseal-key-3-CCCCCCCCCCCCCCCC"
+  - key4: "test-unseal-key-4-DDDDDDDDDDDDDDDD"
+  - key5: "test-unseal-key-5-EEEEEEEEEEEEEEEE"
+
+# WireGuard Peer Keys (simulated)
+wireguard:
+  private_key: "GHPx8q+RkF5w9q+VnK7z0mN3pJ2hL5dF8sT2uW4yX6zA="
+  public_key: "sL9x2q+VnK7z0mN3pJ2hL5dF8sT2uW4yX6zA9q+Rk="
+
+# OPA Client Certificate (simulated)
+opa:
+  ca_cert: |
+    -----BEGIN CERTIFICATE-----
+    TEST CA CERTIFICATE FOR OPA GATEWAY
+    -----END CERTIFICATE-----
+  client_cert: |
+    -----BEGIN CERTIFICATE-----
+    TEST CLIENT CERTIFICATE
+    -----END CERTIFICATE-----
+  client_key: "test-client-key-for-opa"
+
+# Encryption Master Key (for vault encryption)
+master_key: "aetheris-emulation-master-key-32b!"

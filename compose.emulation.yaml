@@ -1,0 +1,399 @@
+# Aetheris Bare Metal Emulation Environment
+# Simulates production infrastructure for testing
+
+services:
+  # ============================================
+  # 1. ZFS EMULATION LAYER
+  # ============================================
+  zfs-emulator:
+    image: ubuntu:22.04
+    container_name: aetheris_zfs
+    hostname: zfs-emulator
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./config/zfs模拟:/etc/zfs模拟:ro
+      - zfs_pool:/pool
+    devices:
+      - /dev/loop0:/dev/loop0
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    networks:
+      - aetheris_test_net
+
+  # ============================================
+  # 2. WIREGUARD MESH (UDP 51820)
+  # ============================================
+  wireguard-mesh:
+    image: linuxserver/wireguard:latest
+    container_name: aetheris_wireguard
+    hostname: wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - SERVERURL=0.0.0.0
+      - PEERS=2
+      - PEERDNS=10.0.10.2
+      - INTERNAL_SUBNET=10.0.10.0
+    volumes:
+      - ./config/wireguard:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.1
+    restart: unless-stopped
+
+  # ============================================
+  # 3. OPA ZERO-TRUST GATEWAY
+  # ============================================
+  opa-gateway:
+    image: openpolicyagent/opa:latest
+    container_name: aetheris_opa
+    hostname: opa-gateway
+    command: >
+      run --server
+      --addr :8181
+      --set=decision_logs.console=true
+      --set=default_decision=/aetheris/authorize
+      /config
+    volumes:
+      - ./config/policy:/config:ro
+      - opa_data:/srv
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # 4. ENCRYPTED VAULT (Zero-Knowledge)
+  # ============================================
+  encrypted-vault:
+    image: vault:latest
+    container_name: aetheris_vault
+    hostname: vault
+    environment:
+      - VAULT_ADDR=http://127.0.0.1:8200
+      - VAULT_FORMAT=json
+      - VAULT_TOKEN_FILE=/vault/.vault-token
+    volumes:
+      - vault_data:/vault/file
+      - vault_logs:/vault/logs
+      - vault_audit:/vault/audit
+      - ./vault:/vault/external:ro
+    cap_add:
+      - IPC_LOCK
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # 5. AETHERIS CORE (Rust Orchestrator)
+  # ============================================
+  aetheris-core:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    image: ghcr.io/nrupala/aetheris-core:latest
+    container_name: aetheris_core
+    hostname: aetheris-core
+    depends_on:
+      opa-gateway:
+        condition: service_healthy
+      wireguard-mesh:
+        condition: service_started
+      encrypted-vault:
+        condition: service_healthy
+    environment:
+      - AI_ENDPOINT=http://10.0.10.4:11434
+      - OPA_ENDPOINT=http://10.0.10.2:8181
+      - VAULT_ADDR=http://10.0.10.3:8200
+      - VAULT_PATH=/vault/external
+      - WIREGUARD_ENDPOINT=10.0.10.1:51820
+      - LOG_LEVEL=debug
+      - RUST_LOG=debug
+    volumes:
+      - aetheris_vault:/data/vault:ro
+      - ./config/policy:/etc/aetheris/policy:ro
+      - ./tests/keys:/keys:ro
+    network_mode: "service:wireguard-mesh"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # 6. OLLAMA AI ENGINE (Local LLM)
+  # ============================================
+  ollama-ai:
+    image: ollama/ollama:latest
+    container_name: aetheris_ollama
+    hostname: ollama-ai
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.4
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
+
+  # ============================================
+  # 7. CHROMA VECTOR DATABASE (Semantic Search)
+  # ============================================
+  chroma-vector:
+    image: chromadb/chroma:latest
+    container_name: aetheris_chroma
+    hostname: chroma-vector
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.5
+    restart: unless-stopped
+
+  # ============================================
+  # 8. GHOST SHELL HONEYPOT (Security)
+  # ============================================
+  ghost-shell:
+    image: alpine:latest
+    container_name: aetheris_ghost
+    hostname: ghost-shell
+    volumes:
+      - ./scripts/ghost/dummy_vault:/data:ro
+      - ./scripts/ghost:/scripts:ro
+    command: ["/scripts/simulated_ui.sh"]
+    networks:
+      aetheris_isolation_net:
+        ipv4_address: 172.20.0.10
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+    profiles:
+      - ghost
+
+  # ============================================
+  # 9. AI SENTINEL (Monitoring & Threat Detection)
+  # ============================================
+  ai-sentinel:
+    image: python:3.11-slim
+    container_name: aetheris_sentinel
+    hostname: sentinel
+    depends_on:
+      - aetheris-core
+      - opa-gateway
+    volumes:
+      - ./sentinel:/scripts:ro
+      - ./vault:/data/vault:ro
+      - sentinel_logs:/var/log/sentinel
+    environment:
+      - SENTINEL_MODE=active
+      - OPA_ENDPOINT=http://10.0.10.2:8181
+      - AETHERIS_ENDPOINT=http://wireguard-mesh:8080
+      - LOG_LEVEL=debug
+    command: ["python", "/scripts/ai_sentinel.py"]
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.6
+    restart: unless-stopped
+
+  # ============================================
+  # 10. VICTORIAMETRICS (Monitoring)
+  # ============================================
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: aetheris_metrics
+    hostname: victoria-metrics
+    volumes:
+      - victoria_data:/storage
+      - ./monitoring:/etc/victoria:ro
+    command:
+      - "--retentionPeriod=12"
+      - "--storageDataPath=/storage"
+      - "--logNewSeries=true"
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.7
+    ports:
+      - "8428:8428"
+      - "8089:8089"
+      - "2003:2003"
+    restart: unless-stopped
+
+  # ============================================
+  # 11. GRAFANA DASHBOARD
+  # ============================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aetheris_grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=aetheris_secret
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.8
+    restart: unless-stopped
+    depends_on:
+      - victoria-metrics
+
+  # ============================================
+  # 12. NETWORK TEST CLIENT
+  # ============================================
+  network-tester:
+    image: nicolaka/netshoot:latest
+    container_name: aetheris_network_tester
+    hostname: network-tester
+    depends_on:
+      - aetheris-core
+      - opa-gateway
+      - wireguard-mesh
+    networks:
+      aetheris_test_net:
+        ipv4_address: 10.0.10.100
+    command: ["sleep", "infinity"]
+
+# ============================================
+# NETWORKS
+# ============================================
+networks:
+  aetheris_test_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.10.0/24
+          gateway: 10.0.10.254
+    driver_opts:
+      com.docker.network.bridge.name: aetheris_br
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    labels:
+      - aetheris.type=primary
+      - aetheris.isolation=internal
+
+  aetheris_isolation_net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+    labels:
+      - aetheris.type=honeypot
+      - aetheris.isolation=strict
+
+# ============================================
+# VOLUMES (Encrypted)
+# ============================================
+volumes:
+  zfs_pool:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/zfs_pool
+
+  vault_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/vault_data
+
+  vault_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/vault_logs
+
+  vault_audit:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/vault_audit
+
+  opa_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/opa_data
+
+  ollama_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/ollama_data
+
+  chroma_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/chroma_data
+
+  sentinel_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/sentinel_logs
+
+  victoria_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/victoria_data
+
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/grafana_data
+
+  aetheris_vault:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./vault
