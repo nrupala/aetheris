@@ -1,24 +1,24 @@
 # STAGE 1: The Builder
-FROM --platform=$BUILDPLATFORM rust:1.86-slim AS builder
-ARG TARGETARCH
-ARG TARGETPLATFORM
+FROM rust:1.86-slim AS builder
 
 WORKDIR /usr/src/aetheris
 COPY core/ ./core/
 
-RUN apt-get update && apt-get install -y musl-tools
-RUN case "$TARGETARCH" in \
-      amd64) TARGET="x86_64-unknown-linux-musl" ;; \
-      arm64) TARGET="aarch64-unknown-linux-musl" ;; \
-      *) echo "Unsupported arch: $TARGETARCH"; exit 1 ;; \
-    esac && \
+RUN apt-get update && apt-get install -y musl-tools && \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        TARGET="x86_64-unknown-linux-musl"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        TARGET="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported arch: $ARCH"; exit 1; \
+    fi && \
     rustup target add "$TARGET" && \
     cd core && \
     cargo build --release --target "$TARGET"
 
 # STAGE 2: The Distroless Runner
 FROM gcr.io/distroless/static-debian12:latest
-ARG TARGETARCH
 
 COPY --from=builder /usr/src/aetheris/core/target/*/release/aetheris-core /aetheris-core
 
