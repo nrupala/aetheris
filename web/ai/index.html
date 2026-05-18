@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aetheris AI — Chat</title>
+    <style>
+        :root {
+            --bg: #0d1117; --surface: #161b22; --border: #30363d;
+            --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+            --user-bg: #1f6feb; --ai-bg: #21262d; --green: #3fb950;
+            --red: #f85149;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+        .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .header h1 span { color: var(--accent); }
+        .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+        .status-dot.online { background: var(--green); }
+        .controls { display: flex; gap: 10px; align-items: center; }
+        .controls select, .controls button { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+        .controls button:hover { border-color: var(--accent); }
+        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+        .message { max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+        .message.user { align-self: flex-end; background: var(--user-bg); color: white; }
+        .message.ai { align-self: flex-start; background: var(--ai-bg); border: 1px solid var(--border); }
+        .message.error { align-self: center; background: #3d1f1f; border: 1px solid var(--red); color: var(--red); }
+        .message .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+        .welcome { text-align: center; color: var(--muted); margin-top: 20vh; }
+        .welcome h2 { font-size: 24px; margin-bottom: 8px; color: var(--text); }
+        .input-area { background: var(--surface); border-top: 1px solid var(--border); padding: 16px 20px; }
+        .input-row { display: flex; gap: 10px; max-width: 900px; margin: 0 auto; }
+        #input { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 14px; resize: none; min-height: 48px; max-height: 150px; font-family: inherit; }
+        #input:focus { outline: none; border-color: var(--accent); }
+        #send { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        #send:disabled { opacity: 0.5; cursor: not-allowed; }
+        #send:hover:not(:disabled) { background: #79c0ff; color: var(--bg); }
+        .typing { display: inline-block; }
+        .typing::after { content: ''; animation: dots 1.5s infinite; }
+        @keyframes dots { 0%,20% { content: '.'; } 40% { content: '..'; } 60%,100% { content: '...'; } }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        @media (max-width: 600px) { .message { max-width: 95%; } .controls select { max-width: 150px; } }
+
+        /* Help Panel */
+        .help-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .help-overlay.active { display: flex; }
+        .help-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 800px; max-height: 85vh; width: 90%; overflow-y: auto; padding: 32px; position: relative; }
+        .help-panel h2 { color: var(--accent); margin-bottom: 16px; font-size: 20px; }
+        .help-panel h3 { color: var(--text); margin: 20px 0 8px; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+        .help-panel h4 { color: var(--muted); margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; }
+        .help-panel p, .help-panel li { color: var(--text); line-height: 1.6; font-size: 14px; }
+        .help-panel ul { padding-left: 20px; margin: 8px 0; }
+        .help-panel code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--accent); }
+        .help-panel pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; margin: 8px 0; }
+        .help-panel pre code { background: none; padding: 0; }
+        .help-panel .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; }
+        .help-panel .close-btn:hover { color: var(--text); }
+        .help-panel .badge { display: inline-block; background: #1f6feb22; color: var(--accent); border: 1px solid #1f6feb44; border-radius: 4px; padding: 2px 8px; font-size: 11px; margin-right: 4px; }
+        .help-panel .endpoint { font-family: monospace; font-size: 13px; }
+        .help-panel .method-get { color: var(--green); }
+        .help-panel .method-post { color: var(--accent); }
+        .help-panel .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; margin: 8px 0; }
+        .help-panel .model-item { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; }
+        .help-panel .model-item .name { color: var(--accent); font-weight: 500; }
+        .help-panel .model-item .desc { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><span>◆</span> Aetheris AI</h1>
+        <div class="controls">
+            <select id="model-select"></select>
+            <button onclick="clearChat()">Clear</button>
+            <button onclick="toggleHelp()">Help</button>
+        </div>
+        <div class="status">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </div>
+    <div id="chat">
+        <div class="welcome">
+            <h2>Welcome to Aetheris AI</h2>
+            <p>Local LLM inference via LMStudio • Zero cloud dependency</p>
+        </div>
+    </div>
+    <div class="input-area">
+        <div class="input-row">
+            <textarea id="input" placeholder="Ask anything..." rows="1"></textarea>
+            <button id="send" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <!-- Help Panel -->
+    <div class="help-overlay" id="help-overlay" onclick="if(event.target===this)toggleHelp()">
+        <div class="help-panel">
+            <button class="close-btn" onclick="toggleHelp()">&times;</button>
+            <h2>📘 Aetheris AI — Documentation</h2>
+            
+            <h3>Overview</h3>
+            <p>Aetheris AI provides local LLM inference via <strong>LMStudio</strong> running on the host machine. All 21 models run locally with zero cloud dependency, ensuring complete data privacy.</p>
+            
+            <h3>Access</h3>
+            <ul>
+                <li><strong>URL:</strong> <code>https://ai.nrupalakolkar.com</code></li>
+                <li><strong>Auth:</strong> HTTP Basic Auth — <code>ai_user</code> / <code>efqbqFUzj841_r-5</code></li>
+                <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
+            </ul>
+
+            <h3>Architecture</h3>
+            <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy) → LMStudio (localhost:1234)</code></pre>
+            <ul>
+                <li><strong>Inference Engine:</strong> LMStudio API server (OpenAI-compatible)</li>
+                <li><strong>Models:</strong> 21 loaded models spanning coding, reasoning, and general purpose</li>
+                <li><strong>Security:</strong> HTTP Basic Auth at nginx layer + Cloudflare encryption</li>
+                <li><strong>Cost:</strong> $0/month — fully local, no API calls to external services</li>
+            </ul>
+
+            <h3>API Reference</h3>
+            <p>All endpoints are OpenAI-compatible, accessible at <code>https://ai.nrupalakolkar.com/v1/</code></p>
+
+            <h4><span class="method-get">GET</span> <code>/v1/models</code></h4>
+            <p>List all loaded models with metadata.</p>
+            <pre><code>curl -u ai_user:efqbqFUzj841_r-5 \
+  https://ai.nrupalakolkar.com/v1/models</code></pre>
+
+            <h4><span class="method-post">POST</span> <code>/v1/chat/completions</code></h4>
+            <p>Generate chat completions with conversation history.</p>
+            <pre><code>curl -u ai_user:efqbqFUzj841_r-5 \
+  https://ai.nrupalakolkar.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "strand-rust-coder-14b-v1",
+    "messages": [{"role": "user", "content": "Explain Rust ownership"}],
+    "max_tokens": 4096,
+    "temperature": 0.7
+  }'</code></pre>
+
+            <h3>Available Models</h3>
+            <p><strong>21 models loaded</strong> — select from dropdown or specify in API calls:</p>
+            <div class="model-grid">
+                <div class="model-item"><div class="name">strand-rust-coder-14b-v1</div><div class="desc">Rust coding specialist</div></div>
+                <div class="model-item"><div class="name">microsoft/phi-4-reasoning-plus</div><div class="desc">Advanced reasoning</div></div>
+                <div class="model-item"><div class="name">microsoft/phi-4-mini-reasoning</div><div class="desc">Fast reasoning, lower memory</div></div>
+                <div class="model-item"><div class="name">nvidia/nemotron-3-nano-4b</div><div class="desc">Compact general purpose</div></div>
+                <div class="model-item"><div class="name">ibm/granite-4-h-tiny</div><div class="desc">Ultra-lightweight</div></div>
+                <div class="model-item"><div class="name">google/gemma-3-1b</div><div class="desc">Google lightweight</div></div>
+                <div class="model-item"><div class="name">google/gemma-4-26b-a4b</div><div class="desc">Google large model</div></div>
+                <div class="model-item"><div class="name">qwen/qwen2.5-coder-14b</div><div class="desc">Qwen coding model</div></div>
+                <div class="model-item"><div class="name">qwen2.5-coder-7b-instruct</div><div class="desc">Qwen coding instruct</div></div>
+                <div class="model-item"><div class="name">qwen/qwen3.6-27b</div><div class="desc">Qwen large reasoning</div></div>
+                <div class="model-item"><div class="name">qwen_qwen3-coder-next</div><div class="desc">Qwen next-gen coding</div></div>
+                <div class="model-item"><div class="name">zai-org/glm-4.7-flash</div><div class="desc">Zhipu fast model</div></div>
+                <div class="model-item"><div class="name">deepseek/deepseek-r1-0528-qwen3-8b</div><div class="desc">DeepSeek reasoning</div></div>
+                <div class="model-item"><div class="name">mistralai/ministral-3-3b</div><div class="desc">Mistral compact</div></div>
+                <div class="model-item"><div class="name">liquid/lfm2-1.2b</div><div class="desc">Liquid AI tiny</div></div>
+                <div class="model-item"><div class="name">liquid/lfm2.5-1.2b</div><div class="desc">Liquid AI v2 tiny</div></div>
+                <div class="model-item"><div class="name">essentialai/rnj-1</div><div class="desc">Essential AI general</div></div>
+                <div class="model-item"><div class="name">extremely-scuffed-llama-reasoning</div><div class="desc">Custom llama variant</div></div>
+                <div class="model-item"><div class="name">shadowlilac_extremely-scuffed-llama-reasoning</div><div class="desc">Shadow fork</div></div>
+                <div class="model-item"><div class="name">text-embedding-nomic-embed-text-v1.5</div><div class="desc">Embedding model</div></div>
+                <div class="model-item"><div class="name">ai-code-review-javascript</div><div class="desc">JS code review</div></div>
+            </div>
+
+            <h3>Usage Examples</h3>
+            
+            <h4>Python</h4>
+            <pre><code>import requests
+resp = requests.post(
+    "https://ai.nrupalakolkar.com/v1/chat/completions",
+    auth=("ai_user", "efqbqFUzj841_r-5"),
+    json={
+        "model": "strand-rust-coder-14b-v1",
+        "messages": [{"role": "user", "content": "Hello!"}],
+        "max_tokens": 100
+    }
+)
+print(resp.json()["choices"][0]["message"]["content"])</code></pre>
+
+            <h4>cURL</h4>
+            <pre><code>curl -u ai_user:efqbqFUzj841_r-5 \
+  https://ai.nrupalakolkar.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"strand-rust-coder-14b-v1","messages":[{"role":"user","content":"Hi"}],"max_tokens":50}'</code></pre>
+
+            <h4>OpenAI SDK</h4>
+            <pre><code>from openai import OpenAI
+client = OpenAI(
+    api_key="not-needed",
+    base_url="https://ai.nrupalakolkar.com/v1"
+)
+# Add auth header via custom transport
+resp = client.chat.completions.create(
+    model="strand-rust-coder-14b-v1",
+    messages=[{"role": "user", "content": "Explain Rust lifetimes"}]
+)</code></pre>
+
+            <h3>Tips</h3>
+            <ul>
+                <li><strong>Code tasks:</strong> Use <code>strand-rust-coder-14b-v1</code> or <code>qwen2.5-coder-14b</code></li>
+                <li><strong>Reasoning:</strong> Use <code>microsoft/phi-4-reasoning-plus</code></li>
+                <li><strong>Fast responses:</strong> Use <code>ibm/granite-4-h-tiny</code> or <code>google/gemma-3-1b</code></li>
+                <li><strong>Conversation context:</strong> Chat UI maintains history automatically</li>
+                <li><strong>Max tokens:</strong> Set higher for longer outputs (default 4096)</li>
+                <li><strong>Temperature:</strong> 0.0 for deterministic, 0.7 for creative, 1.0 for maximum variety</li>
+            </ul>
+
+            <h3>Related Services</h3>
+            <ul>
+                <li><strong>RAG:</strong> <code>https://rag.nrupalakolkar.com</code> — Document Q&A with retrieval</li>
+                <li><strong>Dev:</strong> <code>https://dev.nrupalakolkar.com</code> — Full IDE environment</li>
+            </ul>
+
+            <h3>Infrastructure</h3>
+            <ul>
+                <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
+                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
+                <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+                <li><strong>Runtime:</strong> LMStudio API server on port 1234</li>
+                <li><strong>Memory:</strong> ~2GB allocated to Docker</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const API = '/v1';
+        let history = [];
+        let loading = false;
+
+        const input = document.getElementById('input');
+        const chat = document.getElementById('chat');
+        const sendBtn = document.getElementById('send');
+        const modelSelect = document.getElementById('model-select');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        function toggleHelp() {
+            document.getElementById('help-overlay').classList.toggle('active');
+        }
+
+        input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+        input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 150) + 'px'; });
+
+        async function checkStatus() {
+            try {
+                const r = await fetch(`${API}/models`);
+                if (r.ok) {
+                    const data = await r.json();
+                    modelSelect.innerHTML = data.data.map(m => `<option value="${m.id}">${m.id}</option>`).join('');
+                    statusDot.classList.add('online');
+                    statusText.textContent = `${data.data.length} models loaded`;
+                }
+            } catch { statusText.textContent = 'LMStudio offline'; statusDot.classList.remove('online'); }
+        }
+        checkStatus(); setInterval(checkStatus, 30000);
+
+        function clearChat() { history = []; chat.innerHTML = '<div class="welcome"><h2>Chat cleared</h2><p>Start a new conversation</p></div>'; }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text || loading) return;
+            loading = true; sendBtn.disabled = true;
+            input.value = ''; input.style.height = 'auto';
+
+            const welcome = chat.querySelector('.welcome');
+            if (welcome) welcome.remove();
+
+            appendMessage('user', text);
+            history.push({ role: 'user', content: text });
+
+            const aiMsg = appendMessage('ai', '<span class="typing">Thinking</span>');
+
+            try {
+                const r = await fetch(`${API}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: modelSelect.value, messages: history, max_tokens: 4096, temperature: 0.7 })
+                });
+                if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                const data = await r.json();
+                const reply = data.choices[0].message.content;
+                aiMsg.innerHTML = formatMarkdown(reply);
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = `${data.usage?.completion_tokens || '?'} tokens • ${data.usage?.total_tokens || '?'} total • ${modelSelect.value}`;
+                aiMsg.appendChild(meta);
+                history.push({ role: 'assistant', content: reply });
+            } catch (e) {
+                aiMsg.className = 'message error';
+                aiMsg.textContent = `Error: ${e.message}`;
+            } finally { loading = false; sendBtn.disabled = false; input.focus(); }
+        }
+
+        function appendMessage(role, content) {
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.innerHTML = content;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+            return div;
+        }
+
+        function formatMarkdown(text) {
+            return text
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code style="background:#30363d;padding:2px 6px;border-radius:4px;font-size:13px">$1</code>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>

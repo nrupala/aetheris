@@ -54,12 +54,25 @@ sudo ./scripts/bootstrap.sh
 
 ## Documentation
 
-- [Architecture](ARCHITECTURE.md)
-- [API Specification](API_SPEC.md)
-- [Test Plan](TEST_PLAN.md)
-- [UAT Tests](tests/UAT_TESTS.md)
-- [Build Plan](BUILD_PLAN.md)
-- [Requirements](REQUIREMENTS.md)
+### Getting Started
+- [**User Guide**](docs/USER_GUIDE.md) — How to upload documents, ask questions, manage your knowledge base
+- [**Documentation Index**](docs/INDEX.md) — Complete documentation map and reading order
+
+### Architecture & Design
+- [**RAG Pipeline**](docs/RAG_PIPELINE.md) — Complete workflow from upload to answer, with diagrams
+- [**Processing Coordinator**](docs/COORDINATOR.md) — State machine, circuit breaker, error handling, audit logging
+- [**Knowledge Graph**](docs/KNOWLEDGE_GRAPH.md) — Personal context layer, entity-relation model, query enrichment
+- [**Observability**](docs/OBSERVABILITY.md) — Performance monitoring, anomaly detection, system event logging
+- [**Self-Evaluator**](docs/SELF_EVALUATOR.md) — Continuous improvement system, session analysis, auto-suggestions
+
+### Project Management
+- [**Architecture**](ARCHITECTURE.md) — System architecture
+- [**API Specification**](API_SPEC.md) — REST API reference
+- [**Build Plan**](BUILD_PLAN.md) — Phase roadmap, gap analysis, task tracking
+- [**Test Plan**](TEST_PLAN.md) — Testing strategy
+- [**Requirements**](REQUIREMENTS.md) — Functional requirements
+- [**UAT Tests**](tests/UAT_TESTS.md) — User acceptance tests
+- [**Security**](SECURITY.md) — Security considerations
 
 ## Security
 

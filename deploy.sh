@@ -2,12 +2,13 @@
 # Aetheris Build & Deploy Script
 set -e
 
-BUILD_DIR="/opt/aetheris"
+BUILD_DIR="${AETHERIS_INSTALL_DIR:-/opt/aetheris}"
 echo "========================================="
 echo "AETHERIS BUILD & DEPLOY"
+echo "Install dir: $BUILD_DIR"
 echo "========================================="
 
-# Step 1: Copy files to /opt/aetheris
+# Step 1: Copy files to install directory
 echo "[1/6] Copying files to $BUILD_DIR..."
 if [ ! -d "$BUILD_DIR" ]; then
     sudo mkdir -p "$BUILD_DIR"

@@ -1,0 +1,12 @@
+FROM nginx:alpine
+
+RUN mkdir -p /usr/share/nginx/html/ai /usr/share/nginx/html/rag /usr/share/nginx/html/dev /usr/share/nginx/html/agents
+
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/.htpasswd /etc/nginx/.htpasswd
+COPY web/ai/index.html /usr/share/nginx/html/ai/index.html
+COPY web/rag/index.html /usr/share/nginx/html/rag/index.html
+COPY web/agents/index.html /usr/share/nginx/html/agents/index.html
+
+CMD ["nginx", "-g", "daemon off;"]

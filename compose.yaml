@@ -24,14 +24,30 @@ services:
     networks:
       - aetheris_internal
 
-  # 2. THE INTELLIGENCE LAYER: Local AI Inference (Ollama)
-  ai-engine:
-    image: ollama/ollama:latest
-    container_name: aetheris_ai
-    volumes:
-      - ./data/ollama:/root/.ollama
+  # 2. THE INTELLIGENCE LAYER: Local AI Inference (LMStudio on host)
+  # LMStudio runs on host at localhost:1234 - OpenAI-compatible API
+  # Models: phi-4-reasoning-plus, qwen2.5-coder-14b, nomic-embed-text, etc.
+  # No container needed - all services connect to host.docker.internal:1234
+
+  # 2b. RAG PIPELINE — Semantic Search + Generation
+  rag-service:
+    build:
+      context: ../LLMVM
+      dockerfile: Dockerfile.rag
+    container_name: llmvm_rag
     ports:
-      - "11434:11434"
+      - "8080:8080"
+    volumes:
+      - rag_data:/app/data
+      - rag_db:/app/db
+    environment:
+      - AI_ENDPOINT=http://host.docker.internal:1234
+      - LMSTUDIO_URL=http://host.docker.internal:1234
+      - AI_MODEL=strand-rust-coder-14b-v1
+      - EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+      - RAG_PORT=8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - aetheris_internal
@@ -67,14 +83,13 @@ services:
     container_name: aetheris_core
     depends_on:
       - network-mesh
-      - ai-engine
       - vector-db
       - opa-gateway
     volumes:
       - ./vault:/data/vault:ro
       - ./config/policy:/etc/aetheris/policy:ro
     environment:
-      - AI_ENDPOINT=http://ai-engine:11434
+      - AI_ENDPOINT=http://host.docker.internal:1234
       - OPA_ENDPOINT=http://opa-gateway:8181
       - VAULT_PATH=/data/vault
     network_mode: "service:network-mesh"
@@ -86,9 +101,46 @@ services:
     container_name: aetheris_stats
     volumes:
       - ./data/victoria:/storage
+    ports:
+      - "8428:8428"
     command:
       - "--retentionPeriod=12"
     restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 6b. HOST METRICS: node-exporter (CPU, RAM, Disk, Network)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: aetheris_node_exporter
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - aetheris_internal
+
+  # 6c. CONTAINER METRICS: cAdvisor (container CPU, RAM, network, restarts)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: aetheris_cadvisor
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg
     networks:
       - aetheris_internal
 
@@ -100,6 +152,86 @@ services:
       - ./vault:/data/vault:ro
       - ./sentinel:/scripts:ro
     command: ["python", "/scripts/ai_sentinel.py"]
+    environment:
+      - AI_ENDPOINT=http://host.docker.internal:1234
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 8. DEV SANDBOX — code-server (VS Code in browser) with Rust, Python, opencode
+  llmvm-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: llmvm_dev
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - DEFAULT_WORKSPACE=/config/workspace
+    volumes:
+      - codeserver_data:/config
+      - ../LLMVM/rag_core:/config/workspace/rag_core
+      - ../LLMVM/rag_cli.py:/config/workspace/rag_cli.py
+      - ../LLMVM/requirements.txt:/config/workspace/requirements.txt
+      - ../LLMVM/agent_orchestrator:/config/workspace/agent_orchestrator
+    ports:
+      - "8443:8443"
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 8b. AGENT ORCHESTRATOR — Multi-agent system with MCP, A2A, Phase 3 cross-system
+  llmvm-orchestrator:
+    build:
+      context: ../LLMVM
+      dockerfile: Dockerfile.orchestrator
+    container_name: llmvm_orchestrator
+    ports:
+      - "9090:9090"
+    volumes:
+      - orchestrator_data:/workspace
+      - ../LLMVM/rag_core:/workspace/rag_core
+      - ../LLMVM/agent_orchestrator:/workspace/agent_orchestrator
+    environment:
+      - LMSTUDIO_ENDPOINT=http://host.docker.internal:1234
+      - OPA_ENDPOINT=http://opa-gateway:8181
+      - WORKSPACE_ROOT=/workspace
+      - RAG_ENDPOINT=http://rag-service:8080
+      - VECTOR_DB_ENDPOINT=http://vector-db:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - rag-service
+      - opa-gateway
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 9. NGINX — Web UIs + Password Protection + Reverse Proxy
+  # Serves AI/RAG web UIs, proxies to LMStudio/RAG API/dev backend
+  # All 3 subdomains route here; nginx dispatches by Host header
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: llmvm_nginx
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - aetheris_internal
+
+  # 10. CLOUDFLARE TUNNEL — Zero Inbound Ports
+  # Routes to nginx on port 9080 which serves UIs + proxies to LMStudio/RAG/dev
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: llmvm_tunnel
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     restart: unless-stopped
     networks:
       - aetheris_internal
@@ -108,3 +240,29 @@ networks:
   aetheris_internal:
     name: aetheris_internal
     driver: bridge
+
+volumes:
+  rag_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/rag_data
+  rag_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/rag_db
+  codeserver_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/codeserver_data
+  orchestrator_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/orchestrator_data

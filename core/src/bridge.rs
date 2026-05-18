@@ -15,3 +15,8 @@ pub trait SecurityBridge: AetherisBridge {
 pub trait AIBridge: AetherisBridge {
     async fn embed_and_index(&self, content: &str, file_id: &str) -> Result<(), String>;
 }
+
+#[async_trait]
+pub trait ModelBridge: AetherisBridge {
+    async fn query(&self, prompt: &str, model: &str) -> Result<String, String>;
+}

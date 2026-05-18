@@ -1,6 +1,10 @@
 #!/bin/bash
 # UAT-01: Infrastructure Tests
 set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 FAILED=0
 PASSED=0
 
@@ -38,9 +42,9 @@ fi
 echo "[UAT-01.03] Testing Volume Mounts..."
 MOUNT_OK=true
 for dir in vault data/ollama data/chroma data/victoria config; do
-    if [ ! -d "/opt/aetheris/$dir" ]; then
+    if [ ! -d "$PROJECT_ROOT/$dir" ]; then
         MOUNT_OK=false
-        echo "  FAIL: /opt/aetheris/$dir not found"
+        echo "  FAIL: $PROJECT_ROOT/$dir not found"
         ((FAILED++))
         break
     fi
@@ -52,8 +56,9 @@ fi
 
 # UAT-01.04: Rust Binary
 echo "[UAT-01.04] Testing Rust Binary..."
-if [ -f "/opt/aetheris/core/target/x86_64-unknown-linux-musl/release/aetheris-core" ]; then
-    SIZE=$(stat -f%z /opt/aetheris/core/target/x86_64-unknown-linux-musl/release/aetheris-core 2>/dev/null || stat -c%s /opt/aetheris/core/target/x86_64-unknown-linux-musl/release/aetheris-core 2>/dev/null || echo "0")
+BINARY="$PROJECT_ROOT/core/target/x86_64-unknown-linux-musl/release/aetheris-core"
+if [ -f "$BINARY" ]; then
+    SIZE=$(stat -f%z "$BINARY" 2>/dev/null || stat -c%s "$BINARY" 2>/dev/null || echo "0")
     echo "  PASS: Binary exists, size: $SIZE bytes"
     ((PASSED++))
 else

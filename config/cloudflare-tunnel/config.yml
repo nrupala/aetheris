@@ -1,0 +1,51 @@
+# Cloudflare Tunnel Configuration for Aetheris AI
+# Run these commands in Cloudflare Zero Trust dashboard or via cloudflared CLI
+
+# ============================================
+# OPTION 1: Via Cloudflare Dashboard (Recommended)
+# ============================================
+# 1. Go to https://one.dash.cloudflare.com/
+# 2. Navigate to Networks > Tunnels
+# 3. Create Tunnel -> Name: aetheris-ai-tunnel
+# 4. Add Public Hostname:
+#    - Subdomain: ai
+#    - Domain: your-domain.com
+#    - Service Type: HTTP
+#    - Service URL: localhost:1234
+# 5. Add HTTP Header:
+#    - Type: Add Header
+#    - Name: Authorization
+#    - Value: Bearer $YOUR_AI_API_KEY
+#    - Action: Require
+
+# ============================================
+# OPTION 2: Via cloudflared CLI
+# ============================================
+# Create tunnel
+# cloudflared tunnel create aetheris-ai
+
+# Route DNS
+# cloudflared tunnel route dns aetheris-ai ai.your-domain.com
+
+# Create config
+tunnel: aetheris-ai
+credentials-file: /root/.cloudflared/aetheris-ai.json
+
+ingress:
+  # AI Inference endpoint
+  - hostname: ai.your-domain.com
+    service: http://localhost:1234
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: true
+      httpHostHeader: localhost:1234
+
+  # Health check endpoint
+  - hostname: ai.your-domain.com
+    path: /v1/models
+    service: http://localhost:1234
+    originRequest:
+      connectTimeout: 10s
+
+  # Catch-all - deny everything else
+  - service: http_status:403

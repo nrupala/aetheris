@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aetheris RAG — Document Q&A</title>
+    <style>
+        :root {
+            --bg: #0d1117; --surface: #161b22; --border: #30363d;
+            --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+            --green: #3fb950; --red: #f85149; --orange: #d29922;
+            --purple: #bc8cff; --yellow: #e3b341;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+        .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .header h1 span { color: var(--green); }
+        .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+        .status-dot.online { background: var(--green); }
+        .circuit-indicators { display: flex; gap: 8px; margin-left: 12px; }
+        .circuit-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+        .circuit-badge.closed { background: #1a3a1a; color: var(--green); border: 1px solid var(--green); }
+        .circuit-badge.open { background: #3d1f1f; color: var(--red); border: 1px solid var(--red); }
+        .circuit-badge.half-open { background: #3a2f1a; color: var(--orange); border: 1px solid var(--orange); }
+        .tabs { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
+        .tab { padding: 10px 20px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-size: 14px; }
+        .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+        .tab:hover { color: var(--text); }
+        .content { flex: 1; overflow-y: auto; }
+        .panel { display: none; padding: 20px; max-width: 900px; margin: 0 auto; }
+        .panel.active { display: block; }
+        .ask-input { display: flex; gap: 10px; margin-bottom: 20px; }
+        .ask-input input { flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 14px; }
+        .ask-input input:focus { outline: none; border-color: var(--accent); }
+        .ask-input button { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; font-weight: 600; cursor: pointer; }
+        .ask-input button:hover { background: #79c0ff; color: var(--bg); }
+        .answer { background: #21262d; border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+        .answer h3 { color: var(--accent); margin-bottom: 8px; font-size: 14px; }
+        .answer p { line-height: 1.6; white-space: pre-wrap; }
+        .answer .meta { font-size: 11px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+        .answer .reasoning-badge { display: inline-block; background: #3a2f1a; color: var(--purple); border: 1px solid #bc8cff44; border-radius: 4px; padding: 1px 6px; font-size: 10px; margin-left: 8px; }
+        .answer .confidence-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+        .answer .confidence-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+        .answer .sources { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .answer .sources h4 { color: var(--muted); font-size: 12px; margin-bottom: 6px; text-transform: uppercase; }
+        .source-tag { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 11px; color: var(--orange); margin-right: 6px; margin-bottom: 4px; }
+        .welcome { text-align: center; color: var(--muted); margin-top: 15vh; }
+        .welcome h2 { font-size: 24px; margin-bottom: 8px; color: var(--text); }
+        .upload-area { border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+        .upload-area:hover { border-color: var(--accent); }
+        .upload-area input { display: none; }
+        .upload-area p { color: var(--muted); margin-top: 12px; font-size: 14px; }
+        .upload-area .icon { font-size: 48px; }
+        .file-list { margin-top: 20px; }
+        .file-item { display: flex; align-items: center; justify-content: space-between; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+        .file-item .name { font-weight: 500; }
+        .file-item .meta { color: var(--muted); font-size: 12px; }
+        .file-item button { background: transparent; color: var(--red); border: 1px solid var(--red); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+        .file-item button:hover { background: var(--red); color: white; }
+        .upload-result { background: #1a3a1a; border: 1px solid var(--green); border-radius: 8px; padding: 12px 16px; margin-top: 12px; color: var(--green); }
+        .stats-bar { display: flex; gap: 16px; margin-bottom: 20px; }
+        .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; text-align: center; flex: 1; }
+        .stat .num { font-size: 24px; font-weight: 600; color: var(--accent); }
+        .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+        .settings-group { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .settings-group label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; text-transform: uppercase; }
+        .settings-group input, .settings-group select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+        .settings-group input:focus, .settings-group select:focus { outline: none; border-color: var(--accent); }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+        .toggle { position: relative; width: 44px; height: 24px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--border); border-radius: 24px; transition: 0.2s; }
+        .toggle .slider:before { content: ''; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+        .toggle input:checked + .slider { background: var(--accent); }
+        .toggle input:checked + .slider:before { transform: translateX(20px); }
+        .kg-entity-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+        .kg-entity { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+        .kg-entity .name { font-weight: 600; font-size: 13px; color: var(--accent); }
+        .kg-entity .type { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+        .kg-entity .importance { font-size: 11px; color: var(--purple); margin-top: 4px; }
+        .kg-relation { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .kg-relation .from { color: var(--green); }
+        .kg-relation .verb { color: var(--muted); }
+        .kg-relation .to { color: var(--accent); }
+        .kg-filter { display: flex; gap: 10px; margin-bottom: 16px; }
+        .kg-filter input, .kg-filter select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+        .kg-filter input:focus, .kg-filter select:focus { outline: none; border-color: var(--accent); }
+        .kg-stats { display: flex; gap: 16px; margin-bottom: 20px; }
+        .kg-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; text-align: center; flex: 1; }
+        .kg-stat .num { font-size: 24px; font-weight: 600; color: var(--purple); }
+        .kg-stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+        .kg-empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+        .kg-empty .icon { font-size: 48px; margin-bottom: 12px; }
+        .reasoning-trace { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-top: 10px; font-size: 12px; }
+        .reasoning-trace .step { padding: 4px 0; border-bottom: 1px solid var(--border); }
+        .reasoning-trace .step:last-child { border-bottom: none; }
+        .reasoning-trace .iteration { color: var(--purple); font-weight: 600; }
+        .reasoning-trace .confidence { color: var(--green); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .help-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .help-overlay.active { display: flex; }
+        .help-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 800px; max-height: 85vh; width: 90%; overflow-y: auto; padding: 32px; position: relative; }
+        .help-panel h2 { color: var(--green); margin-bottom: 16px; font-size: 20px; }
+        .help-panel h3 { color: var(--text); margin: 20px 0 8px; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+        .help-panel h4 { color: var(--muted); margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; }
+        .help-panel p, .help-panel li { color: var(--text); line-height: 1.6; font-size: 14px; }
+        .help-panel ul { padding-left: 20px; margin: 8px 0; }
+        .help-panel code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--accent); }
+        .help-panel pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; margin: 8px 0; }
+        .help-panel pre code { background: none; padding: 0; }
+        .help-panel .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; }
+        .help-panel .close-btn:hover { color: var(--text); }
+        .help-panel .endpoint { font-family: monospace; font-size: 13px; }
+        .help-panel .method-get { color: var(--green); }
+        .help-panel .method-post { color: var(--accent); }
+        .help-panel .method-delete { color: var(--red); }
+        .help-panel .pipeline { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 8px 0; font-family: monospace; font-size: 13px; }
+        .help-panel .pipeline .step { padding: 4px 0; }
+        .help-panel .pipeline .arrow { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><span>◆</span> Aetheris RAG</h1>
+        <div class="status">
+            <div class="circuit-indicators" id="circuit-indicators"></div>
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">Connecting...</span>
+            <button onclick="toggleHelp()" style="margin-left:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Help</button>
+        </div>
+    </div>
+    <div class="tabs">
+        <div class="tab active" data-tab="ask">Ask</div>
+        <div class="tab" data-tab="docs">Documents</div>
+        <div class="tab" data-tab="kg">Knowledge Graph</div>
+        <div class="tab" data-tab="settings">Settings</div>
+    </div>
+    <div class="content">
+        <div class="panel active" id="panel-ask">
+            <div id="ask-area">
+                <div class="welcome">
+                    <h2>Ask Your Documents</h2>
+                    <p>Upload files in the Documents tab, then query them here</p>
+                    <p style="margin-top:8px;font-size:13px">Enable Reasoning Mode for complex questions</p>
+                </div>
+            </div>
+            <div class="ask-input">
+                <input type="text" id="question" placeholder="What do you want to know from your documents?" />
+                <button onclick="askQuestion()" id="ask-btn">Ask</button>
+            </div>
+        </div>
+        <div class="panel" id="panel-docs">
+            <div class="stats-bar" id="stats-bar"></div>
+            <h2 style="margin-bottom:16px">Upload Documents</h2>
+            <p style="color:var(--muted);margin-bottom:16px;font-size:14px">Supported: PDF, TXT, MD, HTML, JSON, CSV</p>
+            <div class="upload-area" onclick="document.getElementById('file-input').click()">
+                <input type="file" id="file-input" multiple accept=".pdf,.txt,.md,.html,.json,.csv" />
+                <div class="icon">📄</div>
+                <p>Click to upload or drag & drop</p>
+            </div>
+            <div id="upload-result"></div>
+            <h3 style="margin-top:24px;margin-bottom:12px">Indexed Documents</h3>
+            <div id="file-list" class="file-list"></div>
+        </div>
+        <div class="panel" id="panel-kg">
+            <div class="kg-stats" id="kg-stats"></div>
+            <h2 style="margin-bottom:16px">Knowledge Graph</h2>
+            <div class="kg-filter">
+                <select id="kg-entity-type" onchange="loadKGEntities()">
+                    <option value="">All Types</option>
+                    <option value="person">Person</option>
+                    <option value="technology">Technology</option>
+                    <option value="concept">Concept</option>
+                    <option value="tool">Tool</option>
+                    <option value="process">Process</option>
+                    <option value="system">System</option>
+                </select>
+                <input type="text" id="kg-search" placeholder="Search entities..." onkeyup="filterKGEntities()" />
+            </div>
+            <h3 style="margin-bottom:12px;font-size:15px">Entities</h3>
+            <div id="kg-entities" class="kg-entity-list"></div>
+            <h3 style="margin:20px 0 12px;font-size:15px">Relations</h3>
+            <div id="kg-relations"></div>
+        </div>
+        <div class="panel" id="panel-settings">
+            <h2 style="margin-bottom:16px">Settings</h2>
+            <div class="settings-group">
+                <label>Model</label>
+                <select id="model-select"></select>
+            </div>
+            <div class="settings-group">
+                <label>Top K (context chunks)</label>
+                <input type="number" id="top-k" value="5" min="1" max="20" />
+            </div>
+            <div class="settings-group">
+                <label>Similarity Threshold</label>
+                <input type="number" id="threshold" value="0.7" min="0" max="1" step="0.05" />
+            </div>
+            <div class="settings-group">
+                <div class="toggle-row">
+                    <label style="margin:0">Reasoning Mode</label>
+                    <label class="toggle">
+                        <input type="checkbox" id="reasoning-toggle" />
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <p style="color:var(--muted);font-size:12px;margin-top:8px">Enable iterative self-verification for complex questions</p>
+            </div>
+            <div class="settings-group" id="reasoning-settings" style="display:none">
+                <label>Max Iterations</label>
+                <input type="number" id="max-iterations" value="3" min="1" max="10" />
+                <label style="margin-top:12px">Confidence Threshold</label>
+                <input type="number" id="confidence-threshold" value="0.7" min="0" max="1" step="0.05" />
+            </div>
+        </div>
+    </div>
+
+    <div class="help-overlay" id="help-overlay" onclick="if(event.target===this)toggleHelp()">
+        <div class="help-panel">
+            <button class="close-btn" onclick="toggleHelp()">&times;</button>
+            <h2>📘 Aetheris RAG — Documentation</h2>
+            
+            <h3>Overview</h3>
+            <p>Aetheris RAG (Retrieval-Augmented Generation) enables you to upload documents and ask questions about their content. It uses vector embeddings and semantic search to find relevant passages, then generates answers using your local LLM.</p>
+            
+            <h3>Access</h3>
+            <ul>
+                <li><strong>URL:</strong> <code>https://rag.nrupalakolkar.com</code></li>
+                <li><strong>Auth:</strong> HTTP Basic Auth — <code>rag_user</code> / <code>H5epZhriylz+99+1</code></li>
+                <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
+            </ul>
+
+            <h3>Architecture</h3>
+            <div class="pipeline">
+                <div class="step">📄 Document Upload → <span class="arrow">→</span> 🔪 Text Chunking</div>
+                <div class="step">🔪 Chunks → <span class="arrow">→</span> 🧮 Embedding Generation</div>
+                <div class="step">🧮 Embeddings → <span class="arrow">→</span> 💾 Vector Store (SQLite + chroma)</div>
+                <div class="step">❓ Query → <span class="arrow">→</span> 🔍 Semantic Search (top-k)</div>
+                <div class="step">🔍 Results → <span class="arrow">→</span> 🤖 LLM Generation</div>
+                <div class="step">🤖 Answer → <span class="arrow">→</span> 💬 Response with Sources</div>
+            </div>
+
+            <h3>Reasoning Mode</h3>
+            <p>When enabled, the RAG pipeline uses an iterative reasoning loop with temperature annealing (0.8→0.5→0.1) and self-verification to improve answer quality for complex questions.</p>
+            <ul>
+                <li><strong>Max Iterations:</strong> Maximum number of reasoning passes (1-10)</li>
+                <li><strong>Confidence Threshold:</strong> Stop iterating when confidence exceeds this value (0.0-1.0)</li>
+                <li><strong>Temperature Annealing:</strong> Automatically decreases temperature across iterations</li>
+            </ul>
+
+            <h3>Knowledge Graph</h3>
+            <p>Entities and relations extracted from your documents are stored in a personal knowledge graph, enabling contextual awareness across queries.</p>
+
+            <h3>How It Works</h3>
+            <ol style="padding-left:20px;color:var(--text);line-height:1.8;font-size:14px;">
+                <li><strong>Upload</strong> — Documents are split into chunks (~500 tokens each)</li>
+                <li><strong>Embed</strong> — Each chunk is converted to a vector using the embedding model</li>
+                <li><strong>Store</strong> — Vectors are saved in a SQLite database with metadata</li>
+                <li><strong>Search</strong> — Queries are embedded and matched against stored vectors</li>
+                <li><strong>Generate</strong> — Top-k relevant chunks are sent to the LLM for answer generation</li>
+                <li><strong>Cite</strong> — Source documents are returned with relevance scores</li>
+            </ol>
+
+            <h3>API Reference</h3>
+            <p>All endpoints accessible at <code>https://rag.nrupalakolkar.com/</code></p>
+
+            <h4><span class="method-get">GET</span> <code>/health</code></h4>
+            <p>Check service status.</p>
+            <pre><code>curl -u rag_user:H5epZhriylz+99+1 \
+  https://rag.nrupalakolkar.com/health</code></pre>
+
+            <h4><span class="method-post">POST</span> <code>/query</code></h4>
+            <p>Ask a question against indexed documents.</p>
+            <pre><code>curl -u rag_user:H5epZhriylz+99+1 \
+  https://rag.nrupalakolkar.com/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is the project structure?",
+    "use_rag": true,
+    "reasoning": true,
+    "max_iterations": 3,
+    "confidence_threshold": 0.7,
+    "top_k": 5,
+    "threshold": 0.7,
+    "include_history": true
+  }'</code></pre>
+
+            <h4><span class="method-post">POST</span> <code>/ingest/file</code></h4>
+            <p>Upload and index a single file.</p>
+            <pre><code>curl -u rag_user:H5epZhriylz+99+1 \
+  https://rag.nrupalakolkar.com/ingest/file \
+  -F "file=@document.pdf"</code></pre>
+
+            <h4><span class="method-post">POST</span> <code>/ingest/directory</code></h4>
+            <p>Index an entire directory.</p>
+            <pre><code>curl -u rag_user:H5epZhriylz+99+1 \
+  "https://rag.nrupalakolkar.com/ingest/directory?path=/config/workspace/docs"</code></pre>
+
+            <h4><span class="method-get">GET</span> <code>/stats</code></h4>
+            <p>Get knowledge base statistics (chunks, sources, DB size).</p>
+
+            <h4><span class="method-get">GET</span> <code>/sources</code></h4>
+            <p>List all indexed documents with chunk counts and timestamps.</p>
+
+            <h4><span class="method-delete">DELETE</span> <code>/sources/{path}</code></h4>
+            <p>Remove a specific document from the index.</p>
+
+            <h4><span class="method-post">POST</span> <code>/reset</code></h4>
+            <p>Clear all indexed data (irreversible).</p>
+
+            <h3>Supported File Types</h3>
+            <ul>
+                <li><strong>PDF</strong> — Extracted text with page metadata</li>
+                <li><strong>TXT</strong> — Plain text files</li>
+                <li><strong>MD</strong> — Markdown with formatting preserved</li>
+                <li><strong>HTML</strong> — HTML with tags stripped</li>
+                <li><strong>JSON</strong> — Structured data (stringified)</li>
+                <li><strong>CSV</strong> — Tabular data with headers</li>
+            </ul>
+
+            <h3>Settings Explained</h3>
+            <ul>
+                <li><strong>Top K:</strong> Number of most relevant chunks to retrieve (default: 5). Higher = more context but slower</li>
+                <li><strong>Similarity Threshold:</strong> Minimum cosine similarity score (0.0-1.0). Higher = stricter matches</li>
+                <li><strong>Model:</strong> LLM used for answer generation (pulled from AI service)</li>
+                <li><strong>Reasoning Mode:</strong> Enables iterative self-verification for complex questions</li>
+            </ul>
+
+            <h3>Tips</h3>
+            <ul>
+                <li><strong>Index first:</strong> Upload documents before querying</li>
+                <li><strong>Chunk size:</strong> Large documents are automatically chunked</li>
+                <li><strong>Threshold tuning:</strong> Lower threshold (0.5) for broader matches, higher (0.8) for precision</li>
+                <li><strong>Reasoning mode:</strong> Use for complex, multi-part questions that require deeper analysis</li>
+                <li><strong>Source tracking:</strong> Every answer shows which documents were used</li>
+                <li><strong>Knowledge Graph:</strong> View entities and relations extracted from your documents</li>
+            </ul>
+
+            <h3>Related Services</h3>
+            <ul>
+                <li><strong>AI:</strong> <code>https://ai.nrupalakolkar.com</code> — Direct LLM chat</li>
+                <li><strong>Dev:</strong> <code>https://dev.nrupalakolkar.com</code> — Full IDE environment</li>
+            </ul>
+
+            <h3>Infrastructure</h3>
+            <ul>
+                <li><strong>Service:</strong> FastAPI + Uvicorn (Python 3.12)</li>
+                <li><strong>Vector Store:</strong> SQLite + ChromaDB</li>
+                <li><strong>Embeddings:</strong> Local embedding model (via AI service)</li>
+                <li><strong>Storage:</strong> Docker volume (rag_data)</li>
+                <li><strong>Chunking:</strong> Recursive text splitter (~500 tokens)</li>
+                <li><strong>Knowledge Graph:</strong> Entity-relation graph for personal context</li>
+                <li><strong>Reasoning:</strong> Iterative self-verification with temperature annealing</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let loading = false;
+
+        document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+            t.classList.add('active');
+            document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+            if (t.dataset.tab === 'docs') { loadDocuments(); loadStats(); }
+            if (t.dataset.tab === 'kg') { loadKG(); }
+            if (t.dataset.tab === 'settings') { loadCircuitBreakers(); }
+        }));
+
+        const reasoningToggle = document.getElementById('reasoning-toggle');
+        const reasoningSettings = document.getElementById('reasoning-settings');
+        reasoningToggle.addEventListener('change', () => {
+            reasoningSettings.style.display = reasoningToggle.checked ? 'block' : 'none';
+        });
+
+        function toggleHelp() {
+            document.getElementById('help-overlay').classList.toggle('active');
+        }
+
+        document.getElementById('question').addEventListener('keydown', e => { if (e.key === 'Enter') askQuestion(); });
+
+        const fileInput = document.getElementById('file-input');
+        fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+        const uploadArea = document.querySelector('.upload-area');
+        uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.style.borderColor = 'var(--accent)'; });
+        uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor = ''; });
+        uploadArea.addEventListener('drop', e => { e.preventDefault(); uploadArea.style.borderColor = ''; if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+        async function checkStatus() {
+            try { const r = await fetch('/health'); if (r.ok) { document.getElementById('status-dot').classList.add('online'); document.getElementById('status-text').textContent = 'Online'; } } catch { document.getElementById('status-text').textContent = 'Offline'; }
+        }
+        checkStatus(); setInterval(checkStatus, 30000);
+
+        async function loadCircuitBreakers() {
+            try {
+                const r = await fetch('/coordinator/circuits');
+                if (r.ok) {
+                    const circuits = await r.json();
+                    const indicators = document.getElementById('circuit-indicators');
+                    indicators.innerHTML = circuits.map(c => 
+                        `<span class="circuit-badge ${c.state.toLowerCase()}">${c.engine}: ${c.state}</span>`
+                    ).join('');
+                }
+            } catch {}
+        }
+        loadCircuitBreakers(); setInterval(loadCircuitBreakers, 15000);
+
+        async function askQuestion() {
+            const q = document.getElementById('question').value.trim();
+            if (!q || loading) return;
+            loading = true; document.getElementById('ask-btn').disabled = true;
+            const welcome = document.querySelector('.welcome');
+            if (welcome) welcome.remove();
+            const answerDiv = document.createElement('div');
+            answerDiv.className = 'answer';
+            answerDiv.innerHTML = '<h3>Querying...</h3><p>Searching documents...</p>';
+            document.getElementById('ask-area').prepend(answerDiv);
+            try {
+                const reasoningEnabled = reasoningToggle.checked;
+                const body = {
+                    query: q,
+                    use_rag: true,
+                    reasoning: reasoningEnabled,
+                    max_iterations: reasoningEnabled ? parseInt(document.getElementById('max-iterations').value) : undefined,
+                    confidence_threshold: reasoningEnabled ? parseFloat(document.getElementById('confidence-threshold').value) : undefined,
+                    top_k: parseInt(document.getElementById('top-k').value),
+                    threshold: parseFloat(document.getElementById('threshold').value),
+                    include_history: true
+                };
+                const r = await fetch('/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const data = await r.json();
+                let html = `<h3>${q}`;
+                if (data.converged !== undefined && data.converged) {
+                    html += `<span class="reasoning-badge">${data.iterations_used || 1} iterations</span>`;
+                }
+                html += `</h3>`;
+                html += `<p>${data.answer || 'No answer found'}</p>`;
+                let metaHtml = `Model: ${data.model || '?'} • ${data.chunks_searched || 0} chunks • ${data.response_time || 0}s • ${data.tokens_used || 0} tokens`;
+                if (data.confidence !== undefined) {
+                    const confPct = Math.round(data.confidence * 100);
+                    const confColor = data.confidence >= 0.7 ? 'var(--green)' : data.confidence >= 0.4 ? 'var(--orange)' : 'var(--red)';
+                    metaHtml += `<div style="margin-top:6px">Confidence: <span style="color:${confColor}">${confPct}%</span></div>`;
+                    metaHtml += `<div class="confidence-bar"><div class="confidence-fill" style="width:${confPct}%;background:${confColor}"></div></div>`;
+                }
+                html += `<div class="meta">${metaHtml}</div>`;
+                if (data.reasoning_trace && data.reasoning_trace.length) {
+                    html += '<div class="reasoning-trace"><h4 style="color:var(--purple);font-size:11px;margin-bottom:6px">Reasoning Trace</h4>';
+                    data.reasoning_trace.forEach((step, i) => {
+                        html += `<div class="step"><span class="iteration">Iteration ${i+1}</span>: ${step.thought || 'Evaluating...'} <span class="confidence">(confidence: ${(step.confidence * 100).toFixed(0)}%)</span></div>`;
+                    });
+                    html += '</div>';
+                }
+                if (data.sources && data.sources.length) {
+                    html += '<div class="sources"><h4>Sources</h4>' + data.sources.map(s => `<span class="source-tag">${s.source || s} (score: ${(s.score || 0).toFixed(2)})</span>`).join('') + '</div>';
+                }
+                answerDiv.innerHTML = html;
+            } catch (e) { answerDiv.innerHTML = `<h3>${q}</h3><p style="color:var(--red)">Error: ${e.message}</p>`; }
+            finally { loading = false; document.getElementById('ask-btn').disabled = false; }
+        }
+
+        async function handleFiles(files) {
+            const result = document.getElementById('upload-result');
+            for (const file of files) {
+                const fd = new FormData();
+                fd.append('file', file);
+                result.innerHTML = `<p>Uploading ${file.name}...</p>`;
+                try {
+                    const r = await fetch('/ingest/file', { method: 'POST', body: fd });
+                    const data = await r.json();
+                    let summary = `✅ ${file.name} — ${data.chunks_created || '?'} chunks indexed in ${data.time_seconds || 0}s`;
+                    if (data.kg_stats && data.kg_stats.entities_added) {
+                        summary += `, ${data.kg_stats.entities_added} entities extracted`;
+                    }
+                    result.innerHTML = `<div class="upload-result">${summary}</div>`;
+                } catch (e) { result.innerHTML = `<div class="upload-result" style="border-color:var(--red);color:var(--red)">❌ ${file.name}: ${e.message}</div>`; }
+            }
+            fileInput.value = '';
+            loadDocuments();
+            loadStats();
+        }
+
+        async function loadDocuments() {
+            try {
+                const r = await fetch('/sources');
+                const sources = await r.json();
+                const list = document.getElementById('file-list');
+                if (!sources || !sources.length) { list.innerHTML = '<p style="color:var(--muted)">No documents indexed yet</p>'; return; }
+                list.innerHTML = sources.map(s => `<div class="file-item"><div><div class="name">${s.source}</div><div class="meta">${s.chunks} chunks • Last indexed: ${s.last_seen}</div></div><button onclick="deleteDoc('${s.source.replace(/'/g, "\\'")}')">Delete</button></div>`).join('');
+            } catch { document.getElementById('file-list').innerHTML = '<p style="color:var(--red)">Failed to load documents</p>'; }
+        }
+
+        async function loadStats() {
+            try {
+                const r = await fetch('/stats');
+                const stats = await r.json();
+                const bar = document.getElementById('stats-bar');
+                bar.innerHTML = `
+                    <div class="stat"><div class="num">${stats.total_chunks || 0}</div><div class="label">Chunks</div></div>
+                    <div class="stat"><div class="num">${stats.total_sources || 0}</div><div class="label">Sources</div></div>
+                    <div class="stat"><div class="num">${(stats.db_size_mb || 0).toFixed(1)}</div><div class="label">MB</div></div>
+                `;
+            } catch {}
+        }
+
+        async function deleteDoc(name) {
+            if (!confirm(`Delete ${name}?`)) return;
+            await fetch(`/sources/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            loadDocuments();
+            loadStats();
+        }
+
+        async function loadModels() {
+            try {
+                const r = await fetch('/v1/models');
+                if (r.ok) { const data = await r.json(); document.getElementById('model-select').innerHTML = data.data.map(m => `<option value="${m.id}">${m.id}</option>`).join(''); }
+            } catch { document.getElementById('model-select').innerHTML = '<option>strand-rust-coder-14b-v1</option>'; }
+        }
+        loadModels();
+
+        async function loadKG() {
+            await loadKGStats();
+            await loadKGEntities();
+            await loadKGRelations();
+        }
+
+        async function loadKGStats() {
+            try {
+                const r = await fetch('/knowledge-graph/stats');
+                if (r.ok) {
+                    const stats = await r.json();
+                    const bar = document.getElementById('kg-stats');
+                    bar.innerHTML = `
+                        <div class="kg-stat"><div class="num">${stats.total_entities || 0}</div><div class="label">Entities</div></div>
+                        <div class="kg-stat"><div class="num">${stats.total_relations || 0}</div><div class="label">Relations</div></div>
+                        <div class="kg-stat"><div class="num">${stats.total_interactions || 0}</div><div class="label">Interactions</div></div>
+                        <div class="kg-stat"><div class="num">${stats.total_decisions || 0}</div><div class="label">Decisions</div></div>
+                    `;
+                }
+            } catch {
+                document.getElementById('kg-stats').innerHTML = '<p style="color:var(--muted)">Knowledge Graph not available</p>';
+            }
+        }
+
+        async function loadKGEntities() {
+            try {
+                const typeFilter = document.getElementById('kg-entity-type').value;
+                const params = new URLSearchParams();
+                if (typeFilter) params.set('entity_type', typeFilter);
+                params.set('limit', '100');
+                
+                const r = await fetch(`/knowledge-graph/entities?${params}`);
+                if (r.ok) {
+                    const entities = await r.json();
+                    const container = document.getElementById('kg-entities');
+                    if (!entities.length) {
+                        container.innerHTML = '<div class="kg-empty"><div class="icon">🔗</div><p>No entities extracted yet. Upload documents with entity extraction enabled.</p></div>';
+                        return;
+                    }
+                    container.innerHTML = `<div class="kg-entity-list">${entities.map(e => 
+                        `<div class="kg-entity">
+                            <div class="name">${e.name}</div>
+                            <div class="type">${e.entity_type || 'unknown'}</div>
+                            <div class="importance">★ ${(e.importance || 0).toFixed(2)}</div>
+                        </div>`
+                    ).join('')}</div>`;
+                }
+            } catch { document.getElementById('kg-entities').innerHTML = '<p style="color:var(--red)">Failed to load entities</p>'; }
+        }
+
+        async function loadKGRelations() {
+            try {
+                const r = await fetch('/knowledge-graph/relations');
+                if (r.ok) {
+                    const relations = await r.json();
+                    const container = document.getElementById('kg-relations');
+                    if (!relations.length) {
+                        container.innerHTML = '<p style="color:var(--muted)">No relations yet</p>';
+                        return;
+                    }
+                    container.innerHTML = relations.slice(0, 50).map(r =>
+                        `<div class="kg-relation">
+                            <span class="from">${r.from_entity}</span>
+                            <span class="verb">${r.relation_type}</span>
+                            <span class="to">${r.to_entity}</span>
+                        </div>`
+                    ).join('');
+                }
+            } catch { document.getElementById('kg-relations').innerHTML = '<p style="color:var(--red)">Failed to load relations</p>'; }
+        }
+
+        function filterKGEntities() {
+            const query = document.getElementById('kg-search').value.toLowerCase();
+            document.querySelectorAll('.kg-entity').forEach(el => {
+                const name = el.querySelector('.name').textContent.toLowerCase();
+                el.style.display = name.includes(query) ? '' : 'none';
+            });
+        }
+    </script>
+</body>
+</html>

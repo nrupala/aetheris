@@ -1,0 +1,56 @@
+# Cloudflare Tunnel Setup Instructions
+
+## To add `agents.nrupalakolkar.com` to your existing Cloudflare tunnel:
+
+### 1. Access Cloudflare Dashboard
+- Go to: https://one.dash.cloudflare.com/
+- Log in to your Cloudflare account
+
+### 2. Navigate to Tunnels
+- Click on **Network** > **Tunnels** in the left sidebar
+
+### 3. Find Your Existing Tunnel
+- Look for the tunnel named "llmvm-tunnel" 
+- It should have the Tunnel ID: `267e8c28-fc70-4a0d-9c65-1790d6b14477`
+
+### 4. Add Public Hostname
+- Click on your tunnel name
+- Under **Public Hostnames**, click **Add a public hostname**
+- Fill in the details:
+  - **Hostname**: `agents.nrupalakolkar.com`
+  - **Service Type**: **HTTP**
+  - **Service URL**: `http://localhost:8080` (assuming your orchestrator runs on port 8080)
+  - **Path**: `/` (for all paths)
+
+### 5. Configure Origin Request (Optional but Recommended)
+- Click **Advanced settings** under the hostname entry
+- Set **Connect timeout**: `30s`
+- Enable **No TLS verify** (since we're connecting to localhost)
+- Set **HTTP host header**: `localhost:8080`
+
+### 6. Save Changes
+- Click **Save changes** or **Done** to finalize the configuration
+
+### 7. Wait for Activation
+- It may take 1-2 minutes for the hostname to become active
+- You can test by accessing: https://agents.nrupalakolkar.com
+
+### 8. Verify Basic Auth (If Configured)
+- If you have basic auth configured in your Nginx config, you'll need to provide:
+  - Username: `user` (or whatever you set)
+  - Password: `H5epZhriylz+99+1` (from your .env file)
+
+### Alternative: Using cloudflared CLI
+If you prefer CLI, run:
+```bash
+# Add the DNS route
+cloudflared tunnel route dns llmvm-tunnel agents.nrupalakolkar.com
+
+# Update the tunnel configuration to include the new hostname
+# Edit your cloudflared config to include:
+# - hostname: agents.nrupalakolkar.com
+#   service: http://localhost:8080
+```
+
+### Expected Result
+After adding the hostname, `agents.nrupalakolkar.com` should be accessible through your Cloudflare tunnel with the traffic routed to your local `llmvm-orchestrator` container.

@@ -1,0 +1,22 @@
+# Cloudflare Tunnel Configuration Fix
+
+## Problem:
+`agents.nrupalakolkar.com` is configured to route to `http://localhost:8080` but should route to the Nginx proxy like the other domains.
+
+## Solution:
+1. **Go to Cloudflare Dashboard**: https://one.dash.cloudflare.com/
+2. **Network** > **Tunnels** > **llmvm-tunnel**
+3. **Edit** the `agents.nrupalakolkar.com` configuration
+4. **Change Service URL** from `http://localhost:8080` to `http://llmvm_nginx:80`
+5. **Save changes**
+
+## Why This Works:
+- `ai.nrupalakolkar.com` → `http://llmvm_nginx:80` ✓
+- `rag.nrupalakolkar.com` → `http://llmvm_nginx:80` ✓  
+- `dev.nrupalakolkar.com` → `http://llmvm_nginx:80` ✓
+- `agents.nrupalakolkar.com` → `http://llmvm_nginx:80` ← **NEED TO FIX**
+
+Once you change the service URL to `http://llmvm_nginx:80`, Nginx will properly proxy the request to the orchestrator on port 9090.
+
+## Expected Result:
+After changing the service URL, `agents.nrupalakolkar.com` should work correctly and show your orchestrator interface instead of the 530 error.

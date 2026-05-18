@@ -1,0 +1,59 @@
+name: New MCP server
+version: 0.0.1
+schema: v1
+mcpServers:
+  new-mcp-server:
+    command: npx
+    args:
+      - -y
+      - <your-mcp-server>
+    env: {}
+  rust-mcp-filesystem:
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -e
+      - ENABLE_ROOTS
+      - -e
+      - ALLOW_WRITE
+      - -v
+      - /local-directory:/local-directory
+      - mcp/rust-mcp-filesystem
+      - "{{rust-mcp-filesystem.allowed_directories|volume-target|into}}"
+    env:
+      ENABLE_ROOTS: "false"
+      ALLOW_WRITE: "false"
+  sequentialthinking:
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - mcp/sequentialthinking
+  task-orchestrator:
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -v
+      - /local-directory:/local-directory
+      - ghcr.io/jpicklyk/task-orchestrator
+  playwright:
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - mcp/playwright
+  markitdown:
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -v
+      - /local-directory:/local-directory
+      - mcp/markitdown

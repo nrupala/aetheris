@@ -3,7 +3,8 @@ import json
 import sys
 import os
 
-AETHERIS_AI = os.environ.get("AI_ENDPOINT", "http://aetheris_ai:11434")
+AETHERIS_AI = os.environ.get("AI_ENDPOINT", "http://host.docker.internal:1234")
+DEFAULT_MODEL = os.environ.get("AI_MODEL", "microsoft/phi-4-reasoning-plus")
 VAULT_PATH = os.environ.get("VAULT_PATH", "/data/vault")
 AUDIT_LOG = os.path.join(VAULT_PATH, "audit.log")
 
@@ -26,20 +27,24 @@ Logs:
     
     try:
         response = requests.post(
-            f"{AETHERIS_AI}/api/generate",
+            f"{AETHERIS_AI}/v1/chat/completions",
             json={
-                "model": "mistral",
-                "prompt": prompt,
+                "model": DEFAULT_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
                 "stream": False
             },
-            timeout=30
+            timeout=120
         )
         
         if response.status_code == 200:
-            result = response.json().get("response", "UNKNOWN").strip().upper()
-            if result in ["SAFE", "WARNING", "CRITICAL"]:
-                print(f"AI Sentinel Prediction: {result}")
-                return result
+            msg = response.json()["choices"][0]["message"]
+            content = msg.get("content", "") or msg.get("reasoning_content", "")
+            result = content.strip().upper()
+            for status in ["CRITICAL", "WARNING", "SAFE"]:
+                if status in result:
+                    print(f"AI Sentinel Prediction: {status}")
+                    return status
         
         print("AI Sentinel Prediction: SAFE (default)")
         return "SAFE"
@@ -50,5 +55,15 @@ Logs:
         return "SAFE"
 
 if __name__ == "__main__":
-    status = analyze_health()
-    sys.exit(0 if status == "SAFE" else 1)
+    import time
+    while True:
+        try:
+            status = analyze_health()
+            print(f"Sentinel check complete. Next check in 60 seconds.")
+            time.sleep(60)
+        except KeyboardInterrupt:
+            print("Sentinel shutting down.")
+            break
+        except Exception as e:
+            print(f"Sentinel error: {e}. Retrying in 30 seconds.")
+            time.sleep(30)

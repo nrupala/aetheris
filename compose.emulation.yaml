@@ -38,18 +38,17 @@ services:
       - TZ=UTC
       - SERVERURL=0.0.0.0
       - PEERS=2
-      - PEERDNS=10.0.10.2
-      - INTERNAL_SUBNET=10.0.10.0
+      - PEERDNS=10.88.99.0
+      - INTERNAL_SUBNET=10.88.99.0
     volumes:
       - ./config/wireguard:/config
       - /lib/modules:/lib/modules:ro
     ports:
-      - "51820:51820/udp"
+      - "51822:51820/udp"
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.1
+      - aetheris_test_net
     restart: unless-stopped
 
   # ============================================
@@ -63,20 +62,14 @@ services:
       run --server
       --addr :8181
       --set=decision_logs.console=true
-      --set=default_decision=/aetheris/authorize
+      --set=default_decision=/aetheris/authz/allow
       /config
     volumes:
       - ./config/policy:/config:ro
       - opa_data:/srv
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.2
+      - aetheris_test_net
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # ============================================
   # 4. ENCRYPTED VAULT (Zero-Knowledge)
@@ -97,8 +90,7 @@ services:
     cap_add:
       - IPC_LOCK
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.3
+      - aetheris_test_net
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "vault", "status"]
@@ -115,22 +107,22 @@ services:
       dockerfile: Dockerfile.core
     image: ghcr.io/nrupala/aetheris-core:latest
     container_name: aetheris_core
-    hostname: aetheris-core
     depends_on:
       opa-gateway:
-        condition: service_healthy
+        condition: service_started
       wireguard-mesh:
         condition: service_started
       encrypted-vault:
-        condition: service_healthy
+        condition: service_started
     environment:
-      - AI_ENDPOINT=http://10.0.10.4:11434
-      - OPA_ENDPOINT=http://10.0.10.2:8181
-      - VAULT_ADDR=http://10.0.10.3:8200
+      - AI_ENDPOINT=http://host.docker.internal:1234
+      - OPA_ENDPOINT=http://opa-gateway:8181
+      - VAULT_ADDR=http://encrypted-vault:8200
       - VAULT_PATH=/vault/external
-      - WIREGUARD_ENDPOINT=10.0.10.1:51820
+      - WIREGUARD_ENDPOINT=wireguard-mesh:51820
       - LOG_LEVEL=debug
       - RUST_LOG=debug
+      - PORT=8888
     volumes:
       - aetheris_vault:/data/vault:ro
       - ./config/policy:/etc/aetheris/policy:ro
@@ -138,33 +130,19 @@ services:
     network_mode: "service:wireguard-mesh"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8888/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
   # ============================================
-  # 6. OLLAMA AI ENGINE (Local LLM)
+  # 6. LMSTUDIO AI ENGINE (Host-Local LLM)
   # ============================================
-  ollama-ai:
-    image: ollama/ollama:latest
-    container_name: aetheris_ollama
-    hostname: ollama-ai
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.4
-    ports:
-      - "11434:11434"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 60s
-      timeout: 20s
-      retries: 3
-      start_period: 120s
+  # LMStudio runs on host (port 1234) - accessed via host.docker.internal
+  # No container needed - all services connect to host directly
+  # Default model: microsoft/phi-4-reasoning-plus (configurable via AI_MODEL env)
+  # Embeddings: text-embedding-nomic-embed-text-v1.5
 
   # ============================================
   # 7. CHROMA VECTOR DATABASE (Semantic Search)
@@ -179,8 +157,7 @@ services:
     volumes:
       - chroma_data:/chroma/chroma
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.5
+      - aetheris_test_net
     restart: unless-stopped
 
   # ============================================
@@ -219,13 +196,13 @@ services:
       - sentinel_logs:/var/log/sentinel
     environment:
       - SENTINEL_MODE=active
-      - OPA_ENDPOINT=http://10.0.10.2:8181
-      - AETHERIS_ENDPOINT=http://wireguard-mesh:8080
+      - OPA_ENDPOINT=http://opa-gateway:8181
+      - AETHERIS_ENDPOINT=http://wireguard-mesh:8888
+      - AI_ENDPOINT=http://ollama-ai:11434
       - LOG_LEVEL=debug
-    command: ["python", "/scripts/ai_sentinel.py"]
+    command: ["sh", "-c", "pip install requests -q && python /scripts/ai_sentinel.py"]
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.6
+      - aetheris_test_net
     restart: unless-stopped
 
   # ============================================
@@ -243,8 +220,7 @@ services:
       - "--storageDataPath=/storage"
       - "--logNewSeries=true"
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.7
+      - aetheris_test_net
     ports:
       - "8428:8428"
       - "8089:8089"
@@ -268,8 +244,7 @@ services:
     ports:
       - "3000:3000"
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.8
+      - aetheris_test_net
     restart: unless-stopped
     depends_on:
       - victoria-metrics
@@ -286,8 +261,7 @@ services:
       - opa-gateway
       - wireguard-mesh
     networks:
-      aetheris_test_net:
-        ipv4_address: 10.0.10.100
+      - aetheris_test_net
     command: ["sleep", "infinity"]
 
 # ============================================
@@ -298,10 +272,9 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.0.10.0/24
-          gateway: 10.0.10.254
+        - subnet: 10.88.99.0/24
+          gateway: 10.88.99.254
     driver_opts:
-      com.docker.network.bridge.name: aetheris_br
       com.docker.network.bridge.enable_ip_masquerade: "true"
     labels:
       - aetheris.type=primary
@@ -355,13 +328,6 @@ volumes:
       type: none
       o: bind
       device: ./data/opa_data
-
-  ollama_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/ollama_data
 
   chroma_data:
     driver: local

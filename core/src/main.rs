@@ -7,14 +7,13 @@ use axum::{
     Router,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 mod metrics;
 mod watcher;
 
 pub struct AppState {
-    pub vault_path: PathBuf,
+    pub vault_path: std::path::PathBuf,
     pub security_watcher: Arc<watcher::SecurityWatcher>,
     pub ai_url: String,
     pub opa_url: String,
@@ -48,16 +47,16 @@ async fn download_file(
 }
 
 async fn upload_file(
-    axum::extract::State(_state): axum::extract::State<Arc<AppState>>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     let mut uploaded = 0;
-    
+
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.file_name().unwrap_or_else(|| "unknown".into()).to_string();
         match field.bytes().await {
             Ok(data) => {
-                let file_path = PathBuf::from("./vault").join(&name);
+                let file_path = state.vault_path.join(&name);
                 if tokio::fs::write(&file_path, &data[..]).await.is_ok() {
                     println!("Uploaded: {}", name);
                     uploaded += 1;
@@ -68,7 +67,7 @@ async fn upload_file(
             }
         }
     }
-    
+
     let body = if uploaded > 0 {
         serde_json::json!({"status": "uploaded", "count": uploaded})
     } else {
@@ -143,14 +142,22 @@ async fn dashboard_handler() -> impl IntoResponse {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Aetheris Core Active. Zero-Trust Mesh Engaged.");
 
+    let vault_path = std::env::var("VAULT_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("vault"));
+    let ai_url = std::env::var("AI_ENDPOINT")
+        .unwrap_or_else(|_| "http://host.docker.internal:1234".to_string());
+    let opa_url = std::env::var("OPA_ENDPOINT")
+        .unwrap_or_else(|_| "http://opa:8181".to_string());
+
     let state = Arc::new(AppState {
-        vault_path: PathBuf::from("./vault"),
+        vault_path: vault_path.clone(),
         security_watcher: Arc::new(watcher::SecurityWatcher::new()),
-        ai_url: std::env::var("AI_ENDPOINT").unwrap_or_else(|_| "http://ai-engine:11434".to_string()),
-        opa_url: std::env::var("OPA_ENDPOINT").unwrap_or_else(|_| "http://opa:8181".to_string()),
+        ai_url,
+        opa_url,
     });
 
-    tokio::fs::create_dir_all("./vault").await.ok();
+    tokio::fs::create_dir_all(&vault_path).await.ok();
 
     let app_state = state.clone();
     let app = Router::new()
@@ -162,8 +169,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/metrics", get(metrics_handler))
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    println!("Aetheris Core listening on 0.0.0.0:8080");
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    println!("Aetheris Core listening on {}", addr);
     
     axum::serve(listener, app).await?;
 

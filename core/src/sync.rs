@@ -50,7 +50,7 @@ async fn upload_file(
 
         let data = field.bytes().await.unwrap();
         tokio::fs::write(&path, data).await.unwrap();
-        
+
         println!("Synchronized: {}", name);
     }
     StatusCode::OK
@@ -58,8 +58,12 @@ async fn upload_file(
 
 #[tokio::main]
 async fn main() {
+    let vault_path = std::env::var("VAULT_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("vault"));
+
     let state = Arc::new(AppState {
-        vault_path: PathBuf::from("./vault"),
+        vault_path,
     });
 
     let app = Router::new()
@@ -67,6 +71,9 @@ async fn main() {
         .route("/upload", post(upload_file))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    println!("Sync service listening on {}", addr);
     axum::serve(listener, app).await.unwrap();
 }

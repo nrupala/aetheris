@@ -2,6 +2,9 @@
 # Pre-requisites check before UAT
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "========================================="
 echo "AETHERIS UAT PRE-REQUISITES CHECK"
 echo "========================================="
@@ -12,7 +15,7 @@ ERRORS=0
 check() {
     local name=$1
     local cmd=$2
-    
+
     echo -n "Checking $name... "
     if eval "$cmd" >/dev/null 2>&1; then
         echo "OK"
@@ -34,8 +37,8 @@ echo ""
 echo "DIRECTORY STRUCTURE:"
 DIRS=("core" "config" "scripts" "data" "vault" "tests")
 for dir in "${DIRS[@]}"; do
-    echo -n "  /opt/aetheris/$dir... "
-    if [ -d "/opt/aetheris/$dir" ]; then
+    echo -n "  $PROJECT_ROOT/$dir... "
+    if [ -d "$PROJECT_ROOT/$dir" ]; then
         echo "OK"
     else
         echo "MISSING"
@@ -47,12 +50,12 @@ done
 echo ""
 echo "KEY FILES:"
 FILES=(
-    "/opt/aetheris/core/Cargo.toml"
-    "/opt/aetheris/compose.yaml"
-    "/opt/aetheris/Dockerfile.core"
-    "/opt/aetheris/config/policy/policy.rego"
-    "/opt/aetheris/scripts/bootstrap.sh"
-    "/opt/aetheris/scripts/verification.sh"
+    "$PROJECT_ROOT/core/Cargo.toml"
+    "$PROJECT_ROOT/compose.yaml"
+    "$PROJECT_ROOT/Dockerfile.core"
+    "$PROJECT_ROOT/config/policy/policy.rego"
+    "$PROJECT_ROOT/scripts/bootstrap.sh"
+    "$PROJECT_ROOT/scripts/verification.sh"
 )
 for file in "${FILES[@]}"; do
     echo -n "  $file... "
@@ -68,10 +71,10 @@ done
 echo ""
 echo "SCRIPT PERMISSIONS:"
 SCRIPTS=(
-    "/opt/aetheris/scripts/bootstrap.sh"
-    "/opt/aetheris/scripts/verification.sh"
-    "/opt/aetheris/scripts/killswitch.sh"
-    "/opt/aetheris/scripts/vault_setup.sh"
+    "$PROJECT_ROOT/scripts/bootstrap.sh"
+    "$PROJECT_ROOT/scripts/verification.sh"
+    "$PROJECT_ROOT/scripts/killswitch.sh"
+    "$PROJECT_ROOT/scripts/vault_setup.sh"
 )
 for script in "${SCRIPTS[@]}"; do
     echo -n "  $script... "
