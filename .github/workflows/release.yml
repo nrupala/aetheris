@@ -10,15 +10,13 @@ permissions:
   contents: write
 
 jobs:
-  build-linux:
+  build-linux-x86:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         target:
           - x86_64-unknown-linux-gnu
           - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-gnu
-          - aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +34,29 @@ jobs:
 
       - name: Build
         run: cd core && cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aetheris-core-${{ matrix.target }}
+          path: core/target/${{ matrix.target }}/release/aetheris-core
+
+  build-linux-arm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build
+        run: cross build --manifest-path core/Cargo.toml --release --target ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -86,7 +107,7 @@ jobs:
           path: core/target/${{ matrix.target }}/release/aetheris-core
 
   release:
-    needs: [build-linux, build-windows, build-macos]
+    needs: [build-linux-x86, build-linux-arm, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

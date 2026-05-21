@@ -55,16 +55,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - target: aarch64-unknown-linux-gnu
-          - target: aarch64-unknown-linux-musl
+        target:
+          - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
       - name: Cross compile
-        run: |
-          docker run --rm -v "$(pwd):/root/src" -w /root/src messense/rust-cross:${{ matrix.target }} \
-            cargo zigbuild --manifest-path core/Cargo.toml --release --target ${{ matrix.target }}
+        run: cross build --manifest-path core/Cargo.toml --release --target ${{ matrix.target }}
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
