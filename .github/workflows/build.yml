@@ -120,8 +120,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Add target
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: rustup target add aarch64-apple-darwin
+        run: rustup target add ${{ matrix.target }}
 
       - name: Build Release
         run: cd core && cargo build --release --target ${{ matrix.target }}
