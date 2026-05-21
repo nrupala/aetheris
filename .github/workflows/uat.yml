@@ -3,61 +3,71 @@ name: UAT Tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'  # Run nightly at 2 AM
+    - cron: '0 2 * * *'
 
 jobs:
   uat-tests:
     runs-on: ubuntu-latest
-    container:
-      image: docker:latest
-    services:
-      docker:
-        image: docker:dind
-    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Build Stack
-        run: docker compose build
-      
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build core
+        run: cd core && cargo build --release
+
+      - name: Build Aetheris Core (no LLMVM services)
+        run: docker compose build aetheris-core vector-db opa-gateway victoria-metrics nginx
+
       - name: Start Services
-        run: docker compose up -d
-      
+        run: docker compose up -d aetheris-core vector-db opa-gateway victoria-metrics nginx
+
       - name: Wait for Services
-        run: sleep 30
-      
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/status > /dev/null 2>&1; then
+              echo "Core is ready"
+              break
+            fi
+            echo "Waiting for core... ($i/30)"
+            sleep 2
+          done
+
       - name: Run Infrastructure Tests
-        run: bash tests/uat_01_infrastructure.sh || true
-      
+        run: bash tests/uat_01_infrastructure.sh
+
       - name: Run Security Tests
-        run: bash tests/uat_02_security.sh || true
-      
+        run: bash tests/uat_02_security.sh
+
       - name: Run File Operation Tests
-        run: bash tests/uat_03_file_operations.sh || true
-      
+        run: bash tests/uat_03_file_operations.sh
+
       - name: Run Network Tests
-        run: bash tests/uat_05_network.sh || true
-      
+        run: bash tests/uat_05_network.sh
+
       - name: Results
+        if: always()
         run: |
           echo "UAT Test Summary"
           docker compose ps
           docker logs aetheris_core || true
-      
+
       - name: Stop Services
         if: always()
         run: docker compose down -v
 
   report:
     needs: uat-tests
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Generate Report
         run: |
           echo "# Aetheris UAT Report" > UAT_REPORT.md
           echo "Date: $(date)" >> UAT_REPORT.md
-          echo "Status: Tests Completed" >> UAT_REPORT.md
-      
+          echo "Status: ${{ needs.uat-tests.result }}" >> UAT_REPORT.md
+
       - name: Upload Report
         uses: actions/upload-artifact@v4
         with:
