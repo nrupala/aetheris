@@ -1,12 +1,18 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 const MAX_FAILURES: u32 = 5;
 const BAN_DURATION: Duration = Duration::from_secs(3600);
 
 pub struct SecurityWatcher {
     violations: Mutex<HashMap<String, (u32, Instant)>>,
+}
+
+impl Default for SecurityWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecurityWatcher {
@@ -23,10 +29,7 @@ impl SecurityWatcher {
         entry.1 = Instant::now();
 
         if entry.0 >= MAX_FAILURES {
-            println!(
-                "SECURITY: Peer ID banned for {} failures.",
-                entry.0
-            );
+            println!("SECURITY: Peer ID banned for {} failures.", entry.0);
         }
     }
 

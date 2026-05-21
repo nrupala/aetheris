@@ -1,20 +1,44 @@
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WalEntry {
-    FileUpload { filename: String, size: u64 },
-    FileDownload { filename: String },
-    FileDelete { filename: String },
-    SecurityBan { peer_id: String, reason: String },
-    SecurityUnban { peer_id: String },
-    AiQuery { model: String, tokens: u64 },
-    ConfigChange { key: String, old_value: String, new_value: String },
-    Snapshot { name: String },
-    Custom { action: String, details: String },
+    FileUpload {
+        filename: String,
+        size: u64,
+    },
+    FileDownload {
+        filename: String,
+    },
+    FileDelete {
+        filename: String,
+    },
+    SecurityBan {
+        peer_id: String,
+        reason: String,
+    },
+    SecurityUnban {
+        peer_id: String,
+    },
+    AiQuery {
+        model: String,
+        tokens: u64,
+    },
+    ConfigChange {
+        key: String,
+        old_value: String,
+        new_value: String,
+    },
+    Snapshot {
+        name: String,
+    },
+    Custom {
+        action: String,
+        details: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,10 +159,12 @@ mod tests {
     fn test_wal_append() {
         let dir = test_wal_dir("append");
         let mut wal = WriteAheadLog::new(&dir).unwrap();
-        let seq = wal.append(WalEntry::FileUpload {
-            filename: "test.txt".to_string(),
-            size: 1024,
-        }).unwrap();
+        let seq = wal
+            .append(WalEntry::FileUpload {
+                filename: "test.txt".to_string(),
+                size: 1024,
+            })
+            .unwrap();
         assert_eq!(seq, 1);
         assert_eq!(wal.record_count(), 1);
         std::fs::remove_dir_all(&dir).ok();
@@ -148,9 +174,20 @@ mod tests {
     fn test_wal_multiple_appends() {
         let dir = test_wal_dir("multiple");
         let mut wal = WriteAheadLog::new(&dir).unwrap();
-        wal.append(WalEntry::FileUpload { filename: "a.txt".to_string(), size: 100 }).unwrap();
-        wal.append(WalEntry::FileDownload { filename: "a.txt".to_string() }).unwrap();
-        wal.append(WalEntry::SecurityBan { peer_id: "peer-1".to_string(), reason: "excess failures".to_string() }).unwrap();
+        wal.append(WalEntry::FileUpload {
+            filename: "a.txt".to_string(),
+            size: 100,
+        })
+        .unwrap();
+        wal.append(WalEntry::FileDownload {
+            filename: "a.txt".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::SecurityBan {
+            peer_id: "peer-1".to_string(),
+            reason: "excess failures".to_string(),
+        })
+        .unwrap();
         assert_eq!(wal.record_count(), 3);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -159,14 +196,24 @@ mod tests {
     fn test_wal_replay() {
         let dir = test_wal_dir("replay");
         let mut wal = WriteAheadLog::new(&dir).unwrap();
-        wal.append(WalEntry::FileUpload { filename: "doc.pdf".to_string(), size: 5000 }).unwrap();
-        wal.append(WalEntry::AiQuery { model: "test-model".to_string(), tokens: 256 }).unwrap();
+        wal.append(WalEntry::FileUpload {
+            filename: "doc.pdf".to_string(),
+            size: 5000,
+        })
+        .unwrap();
+        wal.append(WalEntry::AiQuery {
+            model: "test-model".to_string(),
+            tokens: 256,
+        })
+        .unwrap();
 
         let mut replayed = Vec::new();
-        let count = wal.replay(|record| {
-            replayed.push(record.clone());
-            Ok(())
-        }).unwrap();
+        let count = wal
+            .replay(|record| {
+                replayed.push(record.clone());
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(count, 2);
         assert_eq!(replayed.len(), 2);
         std::fs::remove_dir_all(&dir).ok();
@@ -176,7 +223,11 @@ mod tests {
     fn test_wal_truncate() {
         let dir = test_wal_dir("truncate");
         let mut wal = WriteAheadLog::new(&dir).unwrap();
-        wal.append(WalEntry::Custom { action: "test".to_string(), details: "data".to_string() }).unwrap();
+        wal.append(WalEntry::Custom {
+            action: "test".to_string(),
+            details: "data".to_string(),
+        })
+        .unwrap();
         wal.truncate().unwrap();
         assert_eq!(wal.record_count(), 1);
         let count = wal.replay(|_| Ok(())).unwrap();
@@ -189,13 +240,21 @@ mod tests {
         let dir = test_wal_dir("persistence");
         {
             let mut wal = WriteAheadLog::new(&dir).unwrap();
-            wal.append(WalEntry::FileUpload { filename: "persistent.txt".to_string(), size: 2048 }).unwrap();
+            wal.append(WalEntry::FileUpload {
+                filename: "persistent.txt".to_string(),
+                size: 2048,
+            })
+            .unwrap();
         }
         {
             let wal = WriteAheadLog::new(&dir).unwrap();
             assert_eq!(wal.record_count(), 1);
             let mut replayed = 0;
-            wal.replay(|_| { replayed += 1; Ok(()) }).unwrap();
+            wal.replay(|_| {
+                replayed += 1;
+                Ok(())
+            })
+            .unwrap();
             assert_eq!(replayed, 1);
         }
         std::fs::remove_dir_all(&dir).ok();
@@ -205,15 +264,48 @@ mod tests {
     fn test_wal_all_entry_types() {
         let dir = test_wal_dir("all_types");
         let mut wal = WriteAheadLog::new(&dir).unwrap();
-        wal.append(WalEntry::FileUpload { filename: "f.txt".to_string(), size: 1 }).unwrap();
-        wal.append(WalEntry::FileDownload { filename: "f.txt".to_string() }).unwrap();
-        wal.append(WalEntry::FileDelete { filename: "f.txt".to_string() }).unwrap();
-        wal.append(WalEntry::SecurityBan { peer_id: "p".to_string(), reason: "r".to_string() }).unwrap();
-        wal.append(WalEntry::SecurityUnban { peer_id: "p".to_string() }).unwrap();
-        wal.append(WalEntry::AiQuery { model: "m".to_string(), tokens: 1 }).unwrap();
-        wal.append(WalEntry::ConfigChange { key: "k".to_string(), old_value: "o".to_string(), new_value: "n".to_string() }).unwrap();
-        wal.append(WalEntry::Snapshot { name: "snap1".to_string() }).unwrap();
-        wal.append(WalEntry::Custom { action: "a".to_string(), details: "d".to_string() }).unwrap();
+        wal.append(WalEntry::FileUpload {
+            filename: "f.txt".to_string(),
+            size: 1,
+        })
+        .unwrap();
+        wal.append(WalEntry::FileDownload {
+            filename: "f.txt".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::FileDelete {
+            filename: "f.txt".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::SecurityBan {
+            peer_id: "p".to_string(),
+            reason: "r".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::SecurityUnban {
+            peer_id: "p".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::AiQuery {
+            model: "m".to_string(),
+            tokens: 1,
+        })
+        .unwrap();
+        wal.append(WalEntry::ConfigChange {
+            key: "k".to_string(),
+            old_value: "o".to_string(),
+            new_value: "n".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::Snapshot {
+            name: "snap1".to_string(),
+        })
+        .unwrap();
+        wal.append(WalEntry::Custom {
+            action: "a".to_string(),
+            details: "d".to_string(),
+        })
+        .unwrap();
 
         let count = wal.replay(|_| Ok(())).unwrap();
         assert_eq!(count, 9);
@@ -233,7 +325,8 @@ mod tests {
                 wal.append(WalEntry::Custom {
                     action: "concurrent".to_string(),
                     details: format!("op-{}", i),
-                }).unwrap();
+                })
+                .unwrap();
             }));
         }
 

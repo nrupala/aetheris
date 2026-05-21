@@ -27,7 +27,8 @@ impl AetherisConnector {
             "input": file_content
         });
 
-        let _ = client.post(format!("{}/v1/embeddings", self.ai_url))
+        let _ = client
+            .post(format!("{}/v1/embeddings", self.ai_url))
             .json(&payload)
             .send()
             .await;
@@ -46,22 +47,28 @@ impl AetherisConnector {
             "stream": false
         });
 
-        let res = client.post(format!("{}/v1/chat/completions", self.ai_url))
+        let res = client
+            .post(format!("{}/v1/chat/completions", self.ai_url))
             .json(&payload)
             .send()
             .await
             .map_err(|e| format!("AI request failed: {}", e))?;
 
         let status = res.status();
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse AI response: {}", e))?;
 
         if status.is_success() {
             let msg = &body["choices"][0]["message"];
-            let content = msg["content"].as_str().filter(|s| !s.is_empty())
+            let content = msg["content"]
+                .as_str()
+                .filter(|s| !s.is_empty())
                 .or_else(|| msg["reasoning_content"].as_str().filter(|s| !s.is_empty()));
 
-            content.map(|s| s.to_string())
+            content
+                .map(|s| s.to_string())
                 .ok_or_else(|| "No content in AI response".to_string())
         } else {
             Err(format!("AI error ({}): {}", status, body))
@@ -70,31 +77,37 @@ impl AetherisConnector {
 
     pub async fn list_models(&self) -> Result<Vec<String>, String> {
         let client = reqwest::Client::new();
-        let res = client.get(format!("{}/v1/models", self.ai_url))
+        let res = client
+            .get(format!("{}/v1/models", self.ai_url))
             .send()
             .await
             .map_err(|e| format!("Failed to list models: {}", e))?;
 
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse models response: {}", e))?;
 
         let models = body["data"]
             .as_array()
-            .map(|arr| arr.iter()
-                .filter_map(|m| m["id"].as_str().map(String::from))
-                .collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(models)
     }
 
     pub fn trigger_snapshot(&self) {
-        std::process::Command::new("zrepl")
+        let mut child = std::process::Command::new("zrepl")
             .arg("signal")
             .arg("wakeup")
             .arg("aetheris_vault_snapshots")
             .spawn()
             .expect("Failed to pulse zrepl");
+        let _ = child.wait();
     }
 }
 
@@ -198,9 +211,11 @@ mod tests {
         });
         let models: Vec<String> = mock_response["data"]
             .as_array()
-            .map(|arr| arr.iter()
-                .filter_map(|m| m["id"].as_str().map(String::from))
-                .collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         assert_eq!(models.len(), 3);
         assert_eq!(models[0], "model-1");
@@ -212,9 +227,11 @@ mod tests {
         let mock_response = json!({});
         let models: Vec<String> = mock_response["data"]
             .as_array()
-            .map(|arr| arr.iter()
-                .filter_map(|m| m["id"].as_str().map(String::from))
-                .collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         assert_eq!(models.len(), 0);
     }

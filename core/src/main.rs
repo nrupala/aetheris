@@ -53,7 +53,10 @@ async fn upload_file(
     let mut uploaded = 0;
 
     while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field.file_name().unwrap_or_else(|| "unknown".into()).to_string();
+        let name = field
+            .file_name()
+            .unwrap_or("unknown")
+            .to_string();
         match field.bytes().await {
             Ok(data) => {
                 let file_path = state.vault_path.join(&name);
@@ -94,7 +97,8 @@ async fn search_handler(
         "query": query,
         "results": results,
         "total": 1
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn status_handler(
@@ -119,13 +123,17 @@ async fn status_handler(
             "banned_peers": 0,
             "ghost_shell": "armed"
         }
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn metrics_handler() -> impl IntoResponse {
     let m = metrics::metrics_handler();
     Response::builder()
-        .header(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )
         .body(Body::from(m))
         .unwrap()
 }
@@ -147,8 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .unwrap_or_else(|_| std::path::PathBuf::from("vault"));
     let ai_url = std::env::var("AI_ENDPOINT")
         .unwrap_or_else(|_| "http://host.docker.internal:1234".to_string());
-    let opa_url = std::env::var("OPA_ENDPOINT")
-        .unwrap_or_else(|_| "http://opa:8181".to_string());
+    let opa_url = std::env::var("OPA_ENDPOINT").unwrap_or_else(|_| "http://opa:8181".to_string());
 
     let state = Arc::new(AppState {
         vault_path: vault_path.clone(),
@@ -173,7 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("Aetheris Core listening on {}", addr);
-    
+
     axum::serve(listener, app).await?;
 
     Ok(())
