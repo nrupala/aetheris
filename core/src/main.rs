@@ -53,10 +53,7 @@ async fn upload_file(
     let mut uploaded = 0;
 
     while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field
-            .file_name()
-            .unwrap_or("unknown")
-            .to_string();
+        let name = field.file_name().unwrap_or("unknown").to_string();
         match field.bytes().await {
             Ok(data) => {
                 let file_path = state.vault_path.join(&name);
