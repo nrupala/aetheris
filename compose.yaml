@@ -151,7 +151,7 @@ services:
     volumes:
       - ./vault:/data/vault:ro
       - ./sentinel:/scripts:ro
-    command: ["python", "/scripts/ai_sentinel.py"]
+    command: ["sh", "-c", "pip install -q requests && python /scripts/ai_sentinel.py"]
     environment:
       - AI_ENDPOINT=http://host.docker.internal:1234
     restart: unless-stopped
@@ -216,8 +216,13 @@ services:
       context: .
       dockerfile: Dockerfile.nginx
     container_name: llmvm_nginx
+    ports:
+      - "9080:80"
+      - "9443:443"
+    volumes:
+      - /home/ubuntu/.acme.sh/nrupalakolkar.com_ecc:/etc/nginx/ssl:ro
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.18.0.1"
     restart: unless-stopped
     networks:
       - aetheris_internal

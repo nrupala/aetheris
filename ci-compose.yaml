@@ -1,0 +1,69 @@
+services:
+  gitea:
+    image: gitea/gitea:latest-rootless
+    container_name: gitea_server
+    restart: unless-stopped
+    volumes:
+      - gitea_data:/var/lib/gitea
+      - gitea_config:/etc/gitea
+    ports:
+      - "3000:3000"
+    networks:
+      - aetheris_internal
+
+  woodpecker-db:
+    image: postgres:16-alpine
+    container_name: woodpecker_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=woodpecker
+      - POSTGRES_PASSWORD=woodpecker
+      - POSTGRES_DB=woodpecker
+    volumes:
+      - woodpecker_db_data:/var/lib/postgresql/data
+    networks:
+      - aetheris_internal
+
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v3
+    container_name: woodpecker_server
+    restart: unless-stopped
+    environment:
+      - WOODPECKER_OPEN=true
+      - WOODPECKER_HOST=https://ci.nrupalakolkar.com
+      - WOODPECKER_GITEA=true
+      - WOODPECKER_GITEA_URL=http://gitea:3000
+      - WOODPECKER_DATABASE_DRIVER=postgres
+      - WOODPECKER_DATABASE_DATASOURCE=postgres://woodpecker:woodpecker@woodpecker-db:5432/woodpecker?sslmode=disable
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+    volumes:
+      - woodpecker_server_data:/var/lib/woodpecker
+    depends_on:
+      - woodpecker-db
+      - gitea
+    networks:
+      - aetheris_internal
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v3
+    container_name: woodpecker_agent
+    restart: unless-stopped
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - woodpecker-server
+    networks:
+      - aetheris_internal
+
+volumes:
+  gitea_data:
+  gitea_config:
+  woodpecker_db_data:
+  woodpecker_server_data:
+
+networks:
+  aetheris_internal:
+    external: true
