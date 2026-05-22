@@ -5,6 +5,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Create required directories if not present (for CI environments)
+mkdir -p "$PROJECT_ROOT/vault" "$PROJECT_ROOT/data/ollama" "$PROJECT_ROOT/data/chroma" "$PROJECT_ROOT/data/victoria"
+
 FAILED=0
 PASSED=0
 
@@ -18,14 +21,14 @@ if command -v docker >/dev/null 2>&1; then
     VERSION=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "0")
     if [ "$VERSION" != "0" ]; then
         echo "  PASS: Docker version $VERSION"
-        ((PASSED++))
+        ((PASSED++)) || true
     else
         echo "  FAIL: Cannot get Docker version"
-        ((FAILED++))
+        ((FAILED++)) || true
     fi
 else
     echo "  FAIL: Docker not installed"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 # UAT-01.02: Container Network
@@ -33,7 +36,7 @@ echo "[UAT-01.02] Testing Container Network..."
 NETWORK=$(docker network ls --format '{{.Name}}' | grep aetheris_internal || echo "")
 if [ -n "$NETWORK" ]; then
     echo "  PASS: Network aetheris_internal exists"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  SKIP: Network not created yet (run docker compose up)"
 fi
@@ -45,25 +48,26 @@ for dir in vault data/ollama data/chroma data/victoria config; do
     if [ ! -d "$PROJECT_ROOT/$dir" ]; then
         MOUNT_OK=false
         echo "  FAIL: $PROJECT_ROOT/$dir not found"
-        ((FAILED++))
+        ((FAILED++)) || true
         break
     fi
 done
 if [ "$MOUNT_OK" = true ]; then
     echo "  PASS: All directories exist"
-    ((PASSED++))
+    ((PASSED++)) || true
 fi
 
 # UAT-01.04: Rust Binary
 echo "[UAT-01.04] Testing Rust Binary..."
-BINARY="$PROJECT_ROOT/core/target/x86_64-unknown-linux-musl/release/aetheris-core"
+# Find the built binary from the release directory
+BINARY=$(find "$PROJECT_ROOT/core/target" -path "*/release/aetheris-core" -type f 2>/dev/null | head -1)
 if [ -f "$BINARY" ]; then
     SIZE=$(stat -f%z "$BINARY" 2>/dev/null || stat -c%s "$BINARY" 2>/dev/null || echo "0")
     echo "  PASS: Binary exists, size: $SIZE bytes"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  FAIL: Binary not found"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 echo ""

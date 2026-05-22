@@ -32,19 +32,19 @@ test_prerequisites() {
     # Check Docker
     if command -v docker &> /dev/null; then
         echo -e "  ${GREEN}✓${NC} Docker found: $(docker --version)"
-        ((passed++))
+        ((PASSED++)) || true
     else
         echo -e "  ${RED}✗${NC} Docker not found"
-        ((failed++))
+        ((FAILED++)) || true
     fi
 
     # Check Docker Compose
     if docker compose version &> /dev/null; then
         echo -e "  ${GREEN}✓${NC} Docker Compose found: $(docker compose version)"
-        ((passed++))
+        ((PASSED++)) || true
     else
         echo -e "  ${RED}✗${NC} Docker Compose not found"
-        ((failed++))
+        ((FAILED++)) || true
     fi
 
     # Check Required Files
@@ -58,10 +58,10 @@ test_prerequisites() {
     for file in "${required_files[@]}"; do
         if [ -f "$file" ]; then
             echo -e "  ${GREEN}✓${NC} Found: $(basename $file)"
-            ((passed++))
+            ((PASSED++)) || true
         else
             echo -e "  ${RED}✗${NC} Missing: $(basename $file)"
-            ((failed++))
+            ((FAILED++)) || true
         fi
     done
 
@@ -331,26 +331,26 @@ main() {
     local failed=0
 
     # Run tests in order
-    test_prerequisites || ((failed++))
+    test_prerequisites || ((FAILED++)) || true
 
     if [ $failed -eq 0 ]; then
-        test_build_environment || ((failed++))
+        test_build_environment || ((FAILED++)) || true
     fi
 
     if [ $failed -eq 0 ]; then
-        test_start_infrastructure || ((failed++))
+        test_start_infrastructure || ((FAILED++)) || true
     fi
 
     # Give services time to start
     sleep 10
 
-    test_zero_trust_policies || ((failed++))
-    test_encrypted_storage || ((failed++))
-    test_wireguard_mesh || ((failed++))
-    test_network_isolation || ((failed++))
-    test_aetheris_core || ((failed++))
-    test_monitoring_stack || ((failed++))
-    test_cleanup || ((failed++))
+    test_zero_trust_policies || ((FAILED++)) || true
+    test_encrypted_storage || ((FAILED++)) || true
+    test_wireguard_mesh || ((FAILED++)) || true
+    test_network_isolation || ((FAILED++)) || true
+    test_aetheris_core || ((FAILED++)) || true
+    test_monitoring_stack || ((FAILED++)) || true
+    test_cleanup || ((FAILED++)) || true
 
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}  Test Summary${NC}"

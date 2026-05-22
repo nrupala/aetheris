@@ -21,7 +21,7 @@ check() {
         echo "OK"
     else
         echo "MISSING"
-        ((ERRORS++))
+        ((ERRORS++)) || true
     fi
 }
 
@@ -42,7 +42,7 @@ for dir in "${DIRS[@]}"; do
         echo "OK"
     else
         echo "MISSING"
-        ((ERRORS++))
+        ((ERRORS++)) || true
     fi
 done
 
@@ -63,7 +63,7 @@ for file in "${FILES[@]}"; do
         echo "OK"
     else
         echo "MISSING"
-        ((ERRORS++))
+        ((ERRORS++)) || true
     fi
 done
 
@@ -84,7 +84,7 @@ for script in "${SCRIPTS[@]}"; do
         echo "WARNING (not executable)"
     else
         echo "MISSING"
-        ((ERRORS++))
+        ((ERRORS++)) || true
     fi
 done
 

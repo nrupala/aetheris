@@ -12,10 +12,10 @@ echo "========================================="
 echo "[UAT-04.01] Testing Ollama Health..."
 if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
     echo "  PASS: Ollama is healthy"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  FAIL: Ollama not responding"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 # UAT-04.02: Text Generation
@@ -25,7 +25,7 @@ RESP=$(curl -s -X POST http://localhost:11434/api/generate \
     -d '{"model":"mistral","prompt":"What is 2+2? Answer in one word.","stream":false}' 2>/dev/null)
 if echo "$RESP" | grep -qi "4\|four"; then
     echo "  PASS: Text generation works"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  WARN: Text generation may need model download (response: $RESP)"
     echo "  INFO: Run 'docker exec aetheris_ai ollama pull mistral' to download"
@@ -39,7 +39,7 @@ RESP=$(curl -s -X POST http://localhost:11434/api/embeddings \
 EMBED_LEN=$(echo "$RESP" | grep -o '"embedding":\[' | wc -l)
 if [ "$EMBED_LEN" -gt 0 ]; then
     echo "  PASS: Embeddings generated"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  WARN: Embedding model may need download"
     echo "  INFO: Run 'docker exec aetheris_ai ollama pull nomic-embed-text'"
@@ -49,10 +49,10 @@ fi
 echo "[UAT-04.04] Testing ChromaDB Health..."
 if curl -s http://localhost:8000/api/v1/heartbeat >/dev/null 2>&1; then
     echo "  PASS: ChromaDB is healthy"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  FAIL: ChromaDB not responding"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 # UAT-04.05: End-to-End Semantic Search
@@ -65,7 +65,7 @@ sleep 5
 SEARCH_RESP=$(curl -s "http://localhost:8080/search?q=budget+financial" 2>/dev/null)
 if echo "$SEARCH_RESP" | grep -qi "semantic\|budget"; then
     echo "  PASS: Semantic search found results"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  INFO: Semantic search returned: $SEARCH_RESP"
     echo "  WARN: Results may need AI indexing to complete"

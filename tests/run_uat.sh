@@ -30,11 +30,11 @@ run_uat() {
     if bash "$script" 2>&1 | tee "$RESULTS_DIR/${uat_num}.log"; then
         echo "[$uat_num] RESULT: PASS"
         echo "$uat_num: PASS" >> "$RESULTS_DIR/summary.txt"
-        ((TOTAL_PASS++))
+        ((TOTAL_PASS++)) || true
     else
         echo "[$uat_num] RESULT: FAIL"
         echo "$uat_num: FAIL" >> "$RESULTS_DIR/summary.txt"
-        ((TOTAL_FAIL++))
+        ((TOTAL_FAIL++)) || true
     fi
     END=$(date +%s)
     echo "Duration: $((END-START)) seconds"

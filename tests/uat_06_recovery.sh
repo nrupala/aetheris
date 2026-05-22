@@ -14,10 +14,10 @@ SNAP_NAME="uat_test_$(date +%s)"
 if sudo zfs snapshot "aetheris_vault/secure_data@$SNAP_NAME" 2>/dev/null; then
     if sudo zfs list -t snapshot | grep -q "$SNAP_NAME"; then
         echo "  PASS: Snapshot created"
-        ((PASSED++))
+        ((PASSED++)) || true
     else
         echo "  FAIL: Snapshot not found after creation"
-        ((FAILED++))
+        ((FAILED++)) || true
     fi
 else
     echo "  SKIP: ZFS not configured or not accessible"
@@ -28,7 +28,7 @@ echo "[UAT-06.02] Testing Snapshot Listing..."
 SNAP_COUNT=$(sudo zfs list -t snapshot 2>/dev/null | grep -c "aetheris_vault" || echo "0")
 if [ "$SNAP_COUNT" -gt 0 ]; then
     echo "  PASS: Found $SNAP_COUNT snapshots"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  INFO: No snapshots yet"
 fi
@@ -39,7 +39,7 @@ if [ -f "/opt/aetheris/scripts/killswitch.sh" ]; then
     echo "  INFO: Kill-switch exists"
     if /opt/aetheris/scripts/killswitch.sh --dry-run 2>&1 | grep -q "DRY RUN"; then
         echo "  PASS: Kill-switch dry-run executes"
-        ((PASSED++))
+        ((PASSED++)) || true
     else
         echo "  WARN: Kill-switch dry-run output unexpected"
     fi
@@ -54,7 +54,7 @@ if [ -f "/opt/aetheris/scripts/verification.sh" ]; then
     if echo "$RESULT" | grep -q "PASS\|FAIL"; then
         echo "  PASS: Verification script runs"
         echo "$RESULT" | grep "PASS" | head -3 | sed 's/^/    /'
-        ((PASSED++))
+        ((PASSED++)) || true
     else
         echo "  WARN: Verification output unexpected"
     fi

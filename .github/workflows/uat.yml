@@ -1,6 +1,8 @@
 name: UAT Tests
 
 on:
+  push:
+    branches: [main, dev, 'feature/**']
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * *'

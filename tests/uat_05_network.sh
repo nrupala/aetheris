@@ -13,20 +13,20 @@ echo "[UAT-05.01] Testing Aetheris Core Health..."
 RESP=$(curl -s http://localhost:8080/status 2>/dev/null)
 if echo "$RESP" | grep -q '"version"'; then
     echo "  PASS: Core API responding"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  FAIL: Core not responding properly"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 # UAT-05.02: VictoriaMetrics Health
 echo "[UAT-05.02] Testing VictoriaMetrics Health..."
 if curl -s http://localhost:8428/health >/dev/null 2>&1; then
     echo "  PASS: VictoriaMetrics is healthy"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  FAIL: VictoriaMetrics not responding"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 # UAT-05.03: Metrics Endpoint
@@ -34,7 +34,7 @@ echo "[UAT-05.03] Testing Prometheus Metrics..."
 METRICS=$(curl -s http://localhost:8080/metrics 2>/dev/null)
 if echo "$METRICS" | grep -q "aetheris_"; then
     echo "  PASS: Prometheus metrics available"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  WARN: Metrics format may differ"
 fi
@@ -45,10 +45,10 @@ HTML=$(curl -s http://localhost:8080/ 2>/dev/null)
 SCRIPT_COUNT=$(echo "$HTML" | grep -c "<script" || echo "0")
 if [ "$SCRIPT_COUNT" -eq 0 ]; then
     echo "  PASS: Dashboard is zero-JS"
-    ((PASSED++))
+    ((PASSED++)) || true
 else
     echo "  FAIL: Dashboard contains $SCRIPT_COUNT script tags"
-    ((FAILED++))
+    ((FAILED++)) || true
 fi
 
 # UAT-05.05: Service Restart Test
