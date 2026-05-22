@@ -10,7 +10,7 @@ echo "========================================="
 
 # UAT-02.01: Default Deny
 echo "[UAT-02.01] Testing Default Deny (no auth)..."
-RESP=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/download/test.txt 2>/dev/null || echo "000")
+RESP=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/download/test.txt 2>/dev/null )
 if [ "$RESP" == "403" ] || [ "$RESP" == "000" ]; then
     echo "  PASS: Default deny working (got $RESP)"
     ((PASSED++)) || true
@@ -21,7 +21,7 @@ fi
 
 # UAT-02.02: Path Traversal Prevention
 echo "[UAT-02.02] Testing Path Traversal Prevention..."
-RESP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/download/../../../etc/passwd" 2>/dev/null || echo "000")
+RESP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/download/../../../etc/passwd" 2>/dev/null )
 if [ "$RESP" == "403" ] || [ "$RESP" == "000" ]; then
     echo "  PASS: Path traversal blocked (got $RESP)"
     ((PASSED++)) || true
