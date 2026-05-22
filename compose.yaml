@@ -90,7 +90,7 @@ services:
       - ./config/policy:/config/policy:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8181/health"]
+      test: ["CMD", "/opa", "healthcheck", "--addr", "http://localhost:8181"]
       interval: 15s
       timeout: 5s
       retries: 3
