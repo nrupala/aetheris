@@ -1,4 +1,3 @@
-# STAGE 1: The Builder
 FROM rust:1.86-slim AS builder
 
 WORKDIR /usr/src/aetheris
@@ -17,11 +16,15 @@ RUN apt-get update && apt-get install -y musl-tools && \
     cd core && \
     cargo build --release --target "$TARGET"
 
-# STAGE 2: The Distroless Runner
-FROM gcr.io/distroless/static-debian12:latest
+FROM alpine:3.21
+
+RUN adduser -D -u 1000 -h /data aetheris && \
+    mkdir -p /data/vault && \
+    chown -R aetheris:aetheris /data
 
 COPY --from=builder /usr/src/aetheris/core/target/*/release/aetheris-core /aetheris-core
 
-USER 1000:1000
-
+USER aetheris
+WORKDIR /data
+EXPOSE 8080
 ENTRYPOINT ["/aetheris-core"]

@@ -113,7 +113,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./vault:/data/vault
+      - vault_data:/data/vault
       - ./config/policy:/etc/aetheris/policy:ro
     environment:
       - AI_ENDPOINT=http://host.docker.internal:1234
@@ -192,7 +192,7 @@ services:
     image: python:3.11-slim
     container_name: aetheris_sentinel
     volumes:
-      - ./vault:/data/vault:ro
+      - vault_data:/data/vault:ro
       - ./sentinel:/scripts:ro
     command: ["sh", "-c", "pip install -q requests && python /scripts/ai_sentinel.py"]
     environment:
@@ -299,6 +299,7 @@ networks:
         - subnet: 172.28.0.0/16
 
 volumes:
+  vault_data:
   rag_data:
   rag_db:
   chroma_data:
