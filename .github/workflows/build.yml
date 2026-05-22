@@ -6,9 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         target:
@@ -51,31 +56,10 @@ jobs:
           name: aetheris-core-${{ matrix.target }}
           path: core/target/${{ matrix.target }}/release/aetheris-core
 
-  build-cross:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - aarch64-unknown-linux-gnu
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install cross
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
-
-      - name: Cross compile
-        run: cross build --manifest-path core/Cargo.toml --release --target ${{ matrix.target }}
-
-      - name: Upload Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: aetheris-core-${{ matrix.target }}
-          path: core/target/${{ matrix.target }}/release/aetheris-core
 
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -104,6 +88,7 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         target:
@@ -135,6 +120,7 @@ jobs:
 
   build-docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: build-rust
     steps:
       - uses: actions/checkout@v4
