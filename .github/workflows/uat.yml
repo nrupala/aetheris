@@ -16,14 +16,18 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build core
+      - name: Build core binary
         run: cd core && cargo build --release
 
-      - name: Build Aetheris Core (no LLMVM services)
-        run: docker compose build aetheris-core vector-db opa-gateway victoria-metrics nginx
+      - name: Build Docker images
+        run: |
+          docker compose build aetheris-core vector-db opa-gateway victoria-metrics nginx
+          docker compose --profile llmvm build rag-service llmvm-orchestrator
 
       - name: Start Services
-        run: docker compose up -d aetheris-core vector-db opa-gateway victoria-metrics nginx
+        run: |
+          docker compose up -d aetheris-core vector-db opa-gateway victoria-metrics nginx
+          docker compose --profile llmvm up -d rag-service llmvm-orchestrator
 
       - name: Wait for Services
         run: |
@@ -44,6 +48,10 @@ jobs:
 
       - name: Run File Operation Tests
         run: bash tests/uat_03_file_operations.sh
+
+      - name: Run LLMVM Integration Tests
+        run: bash tests/uat_04_llmvm.sh
+        continue-on-error: true
 
       - name: Run Network Tests
         run: bash tests/uat_05_network.sh

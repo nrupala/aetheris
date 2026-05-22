@@ -1,0 +1,144 @@
+version: "3.9"
+
+# =============================================================================
+# Aetheris LLMVM — Local Docker Stack
+# Purpose: Run the full LLMVM stack on local machine
+# Access: via Cloudflare Tunnel (zero inbound ports)
+# =============================================================================
+
+networks:
+  llmvm-net:
+    driver: bridge
+
+volumes:
+  lmstudio-models:
+  rag-data:
+  rag-db:
+  codeserver-data:
+  tunnel-config:
+
+services:
+  # -------------------------------------------------------------------------
+  # LMStudio — Local LLM Inference Server
+  # Serves models via OpenAI-compatible API at /v1/
+  # -------------------------------------------------------------------------
+  lmstudio:
+    image: ghcr.io/rimsky-ai/rimsky:latest
+    container_name: llmvm-lmstudio
+    restart: unless-stopped
+    ports:
+      - "1234:1234"
+    volumes:
+      - lmstudio-models:/home/user/.cache/huggingface
+      - ./models:/models
+    environment:
+      - MODEL=/models
+    networks:
+      - llmvm-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all
+    # Note: If no GPU, remove deploy section and use CPU mode (slower)
+
+  # -------------------------------------------------------------------------
+  # RAG Pipeline — Python RAG Service
+  # Semantic search + generation via LMStudio
+  # -------------------------------------------------------------------------
+  rag-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.rag
+    container_name: llmvm-rag
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - rag-data:/app/data
+      - rag-db:/app/db
+    environment:
+      - LMSTUDIO_URL=http://lmstudio:1234
+      - RAG_PORT=8080
+    depends_on:
+      - lmstudio
+    networks:
+      - llmvm-net
+
+  # -------------------------------------------------------------------------
+  # Dev Sandbox — code-server (VS Code in browser)
+  # Full IDE accessible via tunnel
+  # -------------------------------------------------------------------------
+  codeserver:
+    image: lscr.io/linuxserver/code-server:latest
+    container_name: llmvm-dev
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - PASSWORD=${DEV_PASSWORD:-aetheris-dev}
+      - DEFAULT_WORKSPACE=/config/workspace
+    volumes:
+      - codeserver-data:/config
+      - ./rag_core:/config/workspace/rag_core
+      - ./rag_cli.py:/config/workspace/rag_cli.py
+    networks:
+      - llmvm-net
+
+  # -------------------------------------------------------------------------
+  # Nginx Reverse Proxy — Bearer Token Auth + TLS Termination
+  # All traffic goes through this before reaching services
+  # -------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: llmvm-proxy
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - lmstudio
+      - rag-service
+      - codeserver
+    networks:
+      - llmvm-net
+
+  # -------------------------------------------------------------------------
+  # Cloudflare Tunnel — Zero Inbound Ports
+  # Exposes nginx to the internet securely
+  # -------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: llmvm-tunnel
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - nginx
+    networks:
+      - llmvm-net
+
+  # -------------------------------------------------------------------------
+  # Monitor — Lightweight Resource Monitor
+  # Glances dashboard for system stats
+  # -------------------------------------------------------------------------
+  monitor:
+    image: nicolargo/glances:latest-full
+    container_name: llmvm-monitor
+    restart: unless-stopped
+    pid: host
+    ports:
+      - "61208:61208"
+    environment:
+      - GLANCES_OPT=-w
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - llmvm-net

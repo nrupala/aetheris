@@ -1,0 +1,40 @@
+# Credentials
+*.tfvars
+.env
+*.pem
+*.key
+*.p12
+config/cloudflare-tunnel/*.json
+config/oracle-vm/*.tfvars
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+overrides.tf
+
+# Agent planning docs (internal)
+.agent/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# RAG data
+rag_data/
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

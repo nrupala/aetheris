@@ -36,7 +36,7 @@ services:
   # 2b. RAG PIPELINE — Semantic Search + Generation (requires LLMVM repo)
   rag-service:
     build:
-      context: ../LLMVM
+      context: ./llmvm
       dockerfile: Dockerfile.rag
     container_name: llmvm_rag
     ports:
@@ -228,7 +228,7 @@ services:
   # 8b. AGENT ORCHESTRATOR — Multi-agent system with MCP, A2A, Phase 3 cross-system
   llmvm-orchestrator:
     build:
-      context: ../LLMVM
+      context: ./llmvm
       dockerfile: Dockerfile.orchestrator
     container_name: llmvm_orchestrator
     ports:

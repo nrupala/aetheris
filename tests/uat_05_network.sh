@@ -42,7 +42,7 @@ fi
 # UAT-05.04: Zero-JS Dashboard
 echo "[UAT-05.04] Testing Zero-JS Dashboard..."
 HTML=$(curl -s http://localhost:8080/ 2>/dev/null)
-SCRIPT_COUNT=$(echo "$HTML" | grep -c "<script" || echo "0")
+SCRIPT_COUNT=$(echo "$HTML" | grep -c "<script" || true)
 if [ "$SCRIPT_COUNT" -eq 0 ]; then
     echo "  PASS: Dashboard is zero-JS"
     ((PASSED++)) || true

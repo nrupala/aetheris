@@ -1,0 +1,14 @@
+# us-chicago-1 — Aetheris LLMVM Terraform Variables
+# Fill after OCI signup completion
+
+tenancy_ocid        = "ocid1.tenancy.oc1.."
+user_ocid           = "ocid1.user.oc1.."
+fingerprint         = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key_path    = "~/.oci/oci_api_key.pem"
+region              = "us-chicago-1"
+compartment_ocid    = "ocid1.tenancy.oc1.."
+ssh_public_key      = "ssh-ed25519 AAAA..."
+ssh_cidr            = "0.0.0.0/0"
+tunnel_domain       = "nrupalakolkar.com"
+tunnel_name         = "llmvm-tunnel-chicago"
+ai_bearer_token     = "aetheris-prod-2026"

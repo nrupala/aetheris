@@ -1,0 +1,83 @@
+#cloud-config
+# Aetheris LLMVM — Minimal Bootstrap
+# Oracle ARM VM (Ubuntu 22.04 ARM64)
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - fail2ban
+  - ufw
+  - unattended-upgrades
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - git
+  - python3
+  - python3-pip
+
+runcmd:
+  # --- Swap 16GB + ZRAM 4GB ---
+  - fallocate -l 16G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=16384
+  - chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - sysctl -w vm.swappiness=10 && echo "vm.swappiness=10" >> /etc/sysctl.conf
+
+  # --- Firewall ---
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw --force enable
+
+  # --- Fail2ban ---
+  - |
+    cat > /etc/fail2ban/jail.d/sshd.conf << 'EOF'
+    [sshd]
+    enabled = true
+    port = ssh
+    filter = sshd
+    logpath = /var/log/auth.log
+    maxretry = 3
+    bantime = 3600
+    findtime = 600
+    EOF
+  - systemctl enable fail2ban && systemctl start fail2ban
+
+  # --- SSH Hardening ---
+  - sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+  - sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - sed -i 's/#MaxAuthTries 6/MaxAuthTries 3/' /etc/ssh/sshd_config
+  - systemctl restart sshd
+
+  # --- Docker ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable docker && systemctl start docker
+  - usermod -aG docker aetheris 2>/dev/null || true
+
+  # --- Create dirs and users ---
+  - mkdir -p /opt/aetheris /var/lib/aetheris/models /var/lib/aetheris/rag /var/lib/aetheris/backups
+  - useradd -m -s /bin/bash aetheris 2>/dev/null || true
+  - useradd -m -s /bin/bash dev 2>/dev/null || true
+  - useradd -m -s /bin/bash monitor 2>/dev/null || true
+  - chown -R aetheris:aetheris /var/lib/aetheris
+
+  # --- Cloudflare Tunnel binary ---
+  - curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o /usr/local/bin/cloudflared
+  - chmod +x /usr/local/bin/cloudflared
+  - mkdir -p /etc/cloudflared
+
+  # --- Install code-server (VS Code in browser) ---
+  - curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=/opt/code-server
+
+  # --- Boot log ---
+  - echo "Aetheris LLMVM bootstrap complete at $(date)" > /var/log/aetheris-boot.log
+  - echo "Memory: $(free -h | head -2)" >> /var/log/aetheris-boot.log
+  - echo "Disk: $(df -h / | tail -1)" >> /var/log/aetheris-boot.log
