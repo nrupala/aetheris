@@ -113,7 +113,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./vault:/data/vault:ro
+      - ./vault:/data/vault
       - ./config/policy:/etc/aetheris/policy:ro
     environment:
       - AI_ENDPOINT=http://host.docker.internal:1234
