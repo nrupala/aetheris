@@ -40,7 +40,7 @@ services:
       dockerfile: Dockerfile.rag
     container_name: llmvm_rag
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - rag_data:/app/data
       - rag_db:/app/db
