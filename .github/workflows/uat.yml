@@ -57,9 +57,10 @@ jobs:
           LLMVM_ORCHESTRATOR_PORT: ${{ env.LLMVM_ORCHESTRATOR_PORT }}
         run: |
           docker compose up -d aetheris-core vector-db opa-gateway victoria-metrics nginx
-          docker compose --profile llmvm up -d rag-service llmvm-orchestrator
+          (docker compose --profile llmvm up -d rag-service llmvm-orchestrator) || true
+          docker ps -a
 
-      - name: Wait for Services
+      - name: Wait for Core
         env:
           AETHERIS_CORE_PORT: ${{ env.AETHERIS_CORE_PORT }}
         run: |
@@ -72,6 +73,12 @@ jobs:
             echo "Waiting for core on port $PORT... ($i/30)"
             sleep 2
           done
+
+      - name: Collect container logs
+        if: always()
+        run: |
+          docker logs llmvm_rag 2>&1 | tail -30 || true
+          docker logs llmvm_orchestrator 2>&1 | tail -30 || true
 
       - name: Run Infrastructure Tests
         run: bash tests/uat_01_infrastructure.sh
