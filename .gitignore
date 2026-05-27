@@ -29,3 +29,12 @@ vault/
 data/
 .config/
 .aider*
+
+# OCI credentials
+.oci/
+.oci*/
+*.pem
+check_oci*.py
+create_oci*.py
+test_*.py
+retry_arm*
