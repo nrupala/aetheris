@@ -56,6 +56,7 @@ sudo ./scripts/bootstrap.sh
 
 ### Getting Started
 - [**User Guide**](docs/USER_GUIDE.md) — How to upload documents, ask questions, manage your knowledge base
+- [**Application & Usage Guide**](docs/APPLICATION_AND_USAGE_GUIDE.md) — Use cases, deployment scenarios, workflows, integration patterns
 - [**Documentation Index**](docs/INDEX.md) — Complete documentation map and reading order
 
 ### Architecture & Design
@@ -65,6 +66,7 @@ sudo ./scripts/bootstrap.sh
 - [**Observability**](docs/OBSERVABILITY.md) — Performance monitoring, anomaly detection, system event logging
 - [**Self-Evaluator**](docs/SELF_EVALUATOR.md) — Continuous improvement system, session analysis, auto-suggestions
 - [**Port Allocation**](docs/PORT_ALLOCATOR.md) — Dynamic port assignment and service discovery
+- [**Extending Aetheris**](docs/APPLICATION_AND_USAGE_GUIDE.md#9-extending-aetheris) — Adding models, agents, MCP tools, resources, prompts
 
 ### Project Management
 - [**Architecture**](ARCHITECTURE.md) — System architecture
