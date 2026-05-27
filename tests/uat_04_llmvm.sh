@@ -3,6 +3,8 @@
 set -e
 FAILED=0
 PASSED=0
+CORE_PORT=${AETHERIS_CORE_PORT:-8080}
+RAG_PORT=${RAG_SERVICE_PORT:-8081}
 
 echo "========================================="
 echo "UAT-04: LLMVM INTEGRATION TESTS"
@@ -10,7 +12,7 @@ echo "========================================="
 
 # UAT-04.01: RAG Service Health
 echo "[UAT-04.01] Testing RAG Service Health..."
-if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+if curl -sf "http://localhost:${RAG_PORT}/health" >/dev/null 2>&1; then
     echo "  PASS: RAG service is healthy"
     ((PASSED++)) || true
 else

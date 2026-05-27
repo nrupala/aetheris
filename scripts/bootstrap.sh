@@ -32,10 +32,16 @@ docker compose up -d
 echo "Waiting for services..."
 sleep 10
 
+OPA_PORT=${OPA_GATEWAY_PORT:-8181}
+OLLAMA_PORT=${OLLAMA_PORT:-11434}
+CHROMA_PORT=${CHROMA_PORT:-8000}
+CORE_PORT=${AETHERIS_CORE_PORT:-8080}
+
 echo "Checking service health..."
-curl -s http://localhost:8181/health > /dev/null && echo "OPA: OK" || echo "OPA: FAILED"
-curl -s http://localhost:11434/api/tags > /dev/null && echo "Ollama: OK" || echo "Ollama: FAILED"
-curl -s http://localhost:8000/api/v1/heartbeat > /dev/null && echo "ChromaDB: OK" || echo "ChromaDB: FAILED"
+curl -s "http://localhost:${OPA_PORT}/health" > /dev/null && echo "OPA: OK" || echo "OPA: FAILED"
+curl -s "http://localhost:${OLLAMA_PORT}/api/tags" > /dev/null && echo "Ollama: OK" || echo "Ollama: FAILED"
+curl -s "http://localhost:${CHROMA_PORT}/api/v1/heartbeat" > /dev/null && echo "ChromaDB: OK" || echo "ChromaDB: FAILED"
+curl -s "http://localhost:${CORE_PORT}/status" > /dev/null && echo "Aetheris Core: OK" || echo "Aetheris Core: FAILED"
 
 echo "System Online."
 echo "Access via WireGuard Peer only."

@@ -3,6 +3,8 @@
 set -e
 FAILED=0
 PASSED=0
+CORE_PORT=${AETHERIS_CORE_PORT:-8080}
+OPA_PORT=${OPA_GATEWAY_PORT:-8181}
 
 echo "========================================="
 echo "UAT-02: SECURITY TESTS"
@@ -10,7 +12,7 @@ echo "========================================="
 
 # UAT-02.01: Default Deny
 echo "[UAT-02.01] Testing Default Deny (no auth)..."
-RESP=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/download/test.txt 2>/dev/null )
+RESP=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:$CORE_PORT/download/test.txt 2>/dev/null )
 if [ "$RESP" == "403" ] || [ "$RESP" == "404" ] || [ "$RESP" == "000" ]; then
     echo "  PASS: Request rejected (got $RESP)"
     ((PASSED++)) || true
@@ -21,7 +23,7 @@ fi
 
 # UAT-02.02: Path Traversal Prevention
 echo "[UAT-02.02] Testing Path Traversal Prevention..."
-RESP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/download/../../../etc/passwd" 2>/dev/null )
+RESP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$CORE_PORT/download/../../../etc/passwd" 2>/dev/null )
 if [ "$RESP" == "403" ] || [ "$RESP" == "404" ] || [ "$RESP" == "000" ]; then
     echo "  PASS: Path traversal blocked (got $RESP)"
     ((PASSED++)) || true
@@ -32,7 +34,7 @@ fi
 
 # UAT-02.03: OPA Health
 echo "[UAT-02.03] Testing OPA Health..."
-if curl -s http://localhost:8181/health >/dev/null 2>&1; then
+if curl -s http://localhost:$OPA_PORT/health >/dev/null 2>&1; then
     echo "  PASS: OPA is healthy"
     ((PASSED++)) || true
 else
@@ -42,7 +44,7 @@ fi
 
 # UAT-02.04: OPA Default Policy
 echo "[UAT-02.04] Testing OPA Default Deny Policy..."
-RESP=$(curl -s -X POST http://localhost:8181/v1/data/aetheris/authz/allow \
+RESP=$(curl -s -X POST http://localhost:$OPA_PORT/v1/data/aetheris/authz/allow \
     -H "Content-Type: application/json" \
     -d '{"input":{"user_role":"unknown"}}' 2>/dev/null)
 if echo "$RESP" | grep -q '"result":false'; then

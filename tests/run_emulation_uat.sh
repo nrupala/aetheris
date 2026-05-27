@@ -293,7 +293,8 @@ test_monitoring_stack() {
         echo -e "  ${GREEN}✓${NC} VictoriaMetrics is running"
 
         # Check metrics endpoint
-        if curl -sf http://localhost:8428/health &> /dev/null; then
+        VICTORIA_PORT=${VICTORIA_METRICS_PORT:-8428}
+        if curl -sf "http://localhost:${VICTORIA_PORT}/health" &> /dev/null; then
             echo -e "  ${GREEN}✓${NC} Metrics endpoint healthy"
         fi
     fi

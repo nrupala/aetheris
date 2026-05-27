@@ -17,6 +17,7 @@ pub struct AppState {
     pub security_watcher: Arc<watcher::SecurityWatcher>,
     pub ai_url: String,
     pub opa_url: String,
+    pub port_registry: serde_json::Value,
 }
 
 async fn download_file(
@@ -76,8 +77,9 @@ async fn upload_file(
     axum::Json(body).into_response()
 }
 
+#[allow(unused_variables)]
 async fn search_handler(
-    axum::extract::State(_state): axum::extract::State<Arc<AppState>>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     metrics::SEARCH_QUERIES.inc();
@@ -106,9 +108,12 @@ async fn status_handler(
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
+    let core_port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+
     axum::Json(serde_json::json!({
         "version": "1.0.0",
         "uptime": uptime,
+        "port": core_port,
         "components": {
             "vault": { "status": "encrypted_mounted" },
             "mesh": { "status": "active", "peers": 0 },
@@ -122,6 +127,12 @@ async fn status_handler(
         }
     }))
     .into_response()
+}
+
+async fn discovery_handler(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> impl IntoResponse {
+    axum::Json(state.port_registry.clone()).into_response()
 }
 
 async fn metrics_handler() -> impl IntoResponse {
@@ -154,11 +165,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .unwrap_or_else(|_| "http://host.docker.internal:1234".to_string());
     let opa_url = std::env::var("OPA_ENDPOINT").unwrap_or_else(|_| "http://opa:8181".to_string());
 
+    let registry_path = std::env::var("DISCOVERY_REGISTRY_PATH")
+        .unwrap_or_else(|_| "config/port_registry.json".to_string());
+    let port_registry: serde_json::Value = tokio::fs::read_to_string(&registry_path)
+        .await
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({"services": [], "note": "registry not found"}));
+
     let state = Arc::new(AppState {
         vault_path: vault_path.clone(),
         security_watcher: Arc::new(watcher::SecurityWatcher::new()),
         ai_url,
         opa_url,
+        port_registry,
     });
 
     tokio::fs::create_dir_all(&vault_path).await.ok();
@@ -170,6 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/download/:filename", get(download_file))
         .route("/search", get(search_handler))
         .route("/status", get(status_handler))
+        .route("/discovery", get(discovery_handler))
         .route("/metrics", get(metrics_handler))
         .with_state(app_state);
 

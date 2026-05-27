@@ -204,8 +204,8 @@
 | Phase | Total | Completed | In Progress | Pending |
 |-------|-------|-----------|-------------|---------|
 | Phase 1 | 10 | 10 | 0 | 0 |
-| Phase 2 | 13 | 13 | 0 | 0 |
-| Phase 3 | 9 | 8 | 0 | 1 |
+| Phase 2 | 17 | 17 | 0 | 0 |
+| Phase 3 | 10 | 9 | 0 | 1 |
 | Phase 4 | 8 | 0 | 0 | 8 |
 | Phase 5 | 7 | 0 | 0 | 7 |
 | Phase 6 | 7 | 0 | 0 | 7 |
@@ -214,9 +214,9 @@
 | Phase 9 | 7 | 0 | 0 | 7 |
 | GitHub | 8 | 8 | 0 | 0 |
 | Emulation | 8 | 8 | 0 | 0 |
-| **TOTAL** | **89** | **47** | **0** | **42** |
+| **TOTAL** | **94** | **52** | **0** | **42** |
 
-**Completion: 53%**
+**Completion: 55%**
 
 ---
 
@@ -278,3 +278,20 @@
 - ✅ Added sentinel loop for continuous monitoring
 - ✅ All 11 containers running successfully:
   - zfs, wireguard, opa, vault, core, ollama, chroma, sentinel, metrics, grafana, network-tester
+
+### 2026-05-27 - LLMVM Integration & Port Management
+- ✅ Integrated LLMVM from external repo into `./llmvm/`
+- ✅ LLMVM rag-service + orchestrator added to compose.yaml
+- ✅ CI builds rag-service and orchestrator
+- ✅ Fixed RAG port conflict (8080→8081)
+- ✅ Created `scripts/port_allocator.sh` — dynamic port scanning with fallback lists
+- ✅ Port allocator writes JSON registry at `config/port_registry.json`
+- ✅ CI pipeline runs port allocator, exports ports to `$GITHUB_ENV`
+- ✅ UAT scripts use `$AETHERIS_CORE_PORT`, `$OPA_GATEWAY_PORT`, `$VICTORIA_METRICS_PORT` env vars
+- ✅ Service discovery endpoint `GET /discovery` added to aetheris-core
+- ✅ `/status` endpoint reports core port for bootstrap handshake
+- ✅ compose.yaml mounts `./config:/etc/aetheris:ro` for registry access
+- ✅ All 56 Rust unit tests pass, zero compiler warnings
+- ✅ Hardcoded ports removed from `scripts/verification.sh`, `bootstrap.sh`, UAT scripts
+- ✅ Created `docs/PORT_ALLOCATOR.md` documenting port system
+- ⬜ Pull Ollama AI models (`docker compose run ollama pull mistral nomic-embed-text`)

@@ -35,9 +35,14 @@ fi
 
 # UAT-06.03: Kill-Switch Dry-Run
 echo "[UAT-06.03] Testing Kill-Switch Dry-Run..."
-if [ -f "/opt/aetheris/scripts/killswitch.sh" ]; then
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+KILLSWITCH_SCRIPT="${PROJECT_ROOT}/scripts/killswitch.sh"
+VERIFICATION_SCRIPT="${PROJECT_ROOT}/scripts/verification.sh"
+
+if [ -f "$KILLSWITCH_SCRIPT" ]; then
     echo "  INFO: Kill-switch exists"
-    if /opt/aetheris/scripts/killswitch.sh --dry-run 2>&1 | grep -q "DRY RUN"; then
+    if bash "$KILLSWITCH_SCRIPT" --dry-run 2>&1 | grep -q "DRY RUN"; then
         echo "  PASS: Kill-switch dry-run executes"
         ((PASSED++)) || true
     else
@@ -49,8 +54,8 @@ fi
 
 # UAT-06.04: Verification Script
 echo "[UAT-06.04] Testing Verification Script..."
-if [ -f "/opt/aetheris/scripts/verification.sh" ]; then
-    RESULT=$(/opt/aetheris/scripts/verification.sh 2>&1)
+if [ -f "$VERIFICATION_SCRIPT" ]; then
+    RESULT=$(bash "$VERIFICATION_SCRIPT" 2>&1)
     if echo "$RESULT" | grep -q "PASS\|FAIL"; then
         echo "  PASS: Verification script runs"
         echo "$RESULT" | grep "PASS" | head -3 | sed 's/^/    /'

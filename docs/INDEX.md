@@ -64,6 +64,7 @@ sudo ./scripts/bootstrap.sh
 - [**Knowledge Graph**](docs/KNOWLEDGE_GRAPH.md) — Personal context layer, entity-relation model, query enrichment
 - [**Observability**](docs/OBSERVABILITY.md) — Performance monitoring, anomaly detection, system event logging
 - [**Self-Evaluator**](docs/SELF_EVALUATOR.md) — Continuous improvement system, session analysis, auto-suggestions
+- [**Port Allocation**](docs/PORT_ALLOCATOR.md) — Dynamic port assignment and service discovery
 
 ### Project Management
 - [**Architecture**](ARCHITECTURE.md) — System architecture
@@ -71,7 +72,6 @@ sudo ./scripts/bootstrap.sh
 - [**Build Plan**](BUILD_PLAN.md) — Phase roadmap, gap analysis, task tracking
 - [**Test Plan**](TEST_PLAN.md) — Testing strategy
 - [**Requirements**](REQUIREMENTS.md) — Functional requirements
-- [**UAT Tests**](tests/UAT_TESTS.md) — User acceptance tests
 - [**Security**](SECURITY.md) — Security considerations
 
 ## Security

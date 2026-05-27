@@ -18,7 +18,7 @@ services:
       - ./config/wireguard:/config
       - /lib/modules:/lib/modules
     ports:
-      - "51820:51820/udp"
+      - "${WIREGUARD_PORT:-51820}:51820/udp"
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
     restart: unless-stopped
@@ -87,7 +87,7 @@ services:
     container_name: aetheris_opa
     command: "run --server --addr :8181 --set=decision_logs.console=true /config/policy"
     ports:
-      - "8181:8181"
+      - "${OPA_GATEWAY_PORT:-8181}:8181"
     volumes:
       - ./config/policy:/config/policy:ro
     restart: unless-stopped
@@ -111,14 +111,15 @@ services:
       opa-gateway:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "${AETHERIS_CORE_PORT:-8080}:8080"
     volumes:
       - vault_data:/data/vault
-      - ./config/policy:/etc/aetheris/policy:ro
+      - ./config:/etc/aetheris:ro
     environment:
       - AI_ENDPOINT=http://host.docker.internal:1234
       - OPA_ENDPOINT=http://opa-gateway:8181
       - VAULT_PATH=/data/vault
+      - DISCOVERY_REGISTRY_PATH=/etc/aetheris/port_registry.json
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -137,7 +138,7 @@ services:
     volumes:
       - victoria_data:/storage
     ports:
-      - "8428:8428"
+      - "${VICTORIA_METRICS_PORT:-8428}:8428"
     command:
       - "--retentionPeriod=12"
     restart: unless-stopped
@@ -218,7 +219,7 @@ services:
     volumes:
       - codeserver_data:/config
     ports:
-      - "8443:8443"
+      - "${LLMVM_DEV_PORT:-8443}:8443"
     restart: unless-stopped
     networks:
       - aetheris_internal
@@ -232,7 +233,7 @@ services:
       dockerfile: Dockerfile.orchestrator
     container_name: llmvm_orchestrator
     ports:
-      - "9090:9090"
+      - "${LLMVM_ORCHESTRATOR_PORT:-9090}:9090"
     volumes:
       - orchestrator_data:/workspace
     environment:
@@ -261,8 +262,8 @@ services:
       dockerfile: Dockerfile.nginx
     container_name: llmvm_nginx
     ports:
-      - "9080:80"
-      - "9443:443"
+      - "${NGINX_HTTP_PORT:-9080}:80"
+      - "${NGINX_HTTPS_PORT:-9443}:443"
     volumes:
       - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
       - ./web:/usr/share/nginx/html:ro

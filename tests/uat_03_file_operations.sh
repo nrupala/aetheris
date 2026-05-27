@@ -3,6 +3,7 @@
 set -e
 FAILED=0
 PASSED=0
+CORE_PORT=${AETHERIS_CORE_PORT:-8080}
 
 echo "========================================="
 echo "UAT-03: FILE OPERATIONS TESTS"
@@ -14,7 +15,7 @@ CONTENT="Aetheris UAT Test File $(date)"
 # UAT-03.01: File Upload
 echo "[UAT-03.01] Testing File Upload..."
 echo "$CONTENT" > "$TESTFILE"
-RESP=$(curl -s -X POST -F "file=@$TESTFILE" http://localhost:8080/upload 2>/dev/null || echo '{"error":"failed"}')
+RESP=$(curl -s -X POST -F "file=@$TESTFILE" http://localhost:$CORE_PORT/upload 2>/dev/null || echo '{"error":"failed"}')
 if echo "$RESP" | grep -q '"status":"uploaded"'; then
     echo "  PASS: File uploaded successfully"
     ((PASSED++)) || true
@@ -27,7 +28,7 @@ fi
 echo "[UAT-03.02] Testing File Download..."
 FILENAME=$(basename "$TESTFILE")
 DOWNLOADED="/tmp/uat_download_$(date +%s).txt"
-HTTP_CODE=$(curl -s -o "$DOWNLOADED" -w "%{http_code}" "http://localhost:8080/download/$FILENAME" 2>/dev/null )
+HTTP_CODE=$(curl -s -o "$DOWNLOADED" -w "%{http_code}" "http://localhost:$CORE_PORT/download/$FILENAME" 2>/dev/null )
 if [ "$HTTP_CODE" == "200" ]; then
     if diff "$TESTFILE" "$DOWNLOADED" >/dev/null 2>&1; then
         echo "  PASS: File downloaded with correct content"
@@ -43,7 +44,7 @@ fi
 
 # UAT-03.03: Non-existent File
 echo "[UAT-03.03] Testing Non-existent File..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/download/nonexistent_file_xyz.txt" 2>/dev/null )
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$CORE_PORT/download/nonexistent_file_xyz.txt" 2>/dev/null )
 if [ "$HTTP_CODE" == "404" ]; then
     echo "  PASS: Non-existent file returns 404"
     ((PASSED++)) || true
@@ -55,7 +56,7 @@ fi
 # UAT-03.04: Large File Test
 echo "[UAT-03.04] Testing Large File (1MB)..."
 dd if=/dev/urandom of=/tmp/uat_large.bin bs=1M count=1 2>/dev/null
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -F "file=@/tmp/uat_large.bin" http://localhost:8080/upload 2>/dev/null )
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -F "file=@/tmp/uat_large.bin" http://localhost:$CORE_PORT/upload 2>/dev/null )
 if [ "$HTTP_CODE" == "200" ]; then
     echo "  PASS: Large file uploaded"
     ((PASSED++)) || true
