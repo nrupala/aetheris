@@ -30,14 +30,16 @@ data/
 .config/
 .aider*
 
-# OCI credentials
+# OCI credentials & scripts
 .oci/
 .oci*/
 *.pem
 check_oci*.py
 create_oci*.py
+create_arm_*.py
 test_*.py
 retry_arm*
+arm_retry_*
 
 # Temp files
 tmp_*.py
