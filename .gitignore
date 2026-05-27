@@ -38,3 +38,12 @@ check_oci*.py
 create_oci*.py
 test_*.py
 retry_arm*
+
+# Temp files
+tmp_*.py
+tmp_*.txt
+*_temp.*
+*.log.txt
+*.err.txt
+* snapshottinglogic*
+*peer tracker*
