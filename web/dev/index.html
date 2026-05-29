@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aetheris Dev Sandbox</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e17; color: #e0e0e0; min-height: 100vh; }
+nav { background: #111827; border-bottom: 1px solid #1e293b; padding: 0.75rem 2rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+nav h1 { color: #60a5fa; font-size: 1.25rem; }
+nav .badge { color: #64748b; font-size: 0.75rem; background: #1e293b; padding: 0.25rem 0.5rem; border-radius: 4px; }
+.tabs { display: flex; gap: 0; margin-left: auto; }
+.tab { padding: 0.5rem 1rem; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; font-size: 0.875rem; }
+.tab:hover { color: #93c5fd; }
+.tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+.container { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+.card { background: #111827; border: 1px solid #1e293b; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+.card h2 { color: #f1f5f9; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.card h2 .sub { color: #64748b; font-size: 0.8rem; font-weight: 400; }
+
+select, input, textarea { background: #0f172a; border: 1px solid #1e293b; color: #e0e0e0; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; font-family: inherit; }
+select:focus, input:focus, textarea:focus { outline: none; border-color: #3b82f6; }
+
+.btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-family: inherit; }
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-secondary { background: #1e293b; color: #93c5fd; }
+.btn-secondary:hover { background: #334155; }
+.btn-success { background: #065f46; color: #6ee7b7; }
+.btn-danger { background: #991b1b; color: #fca5a5; }
+.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+.btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1rem; font-size: 0.8rem; color: #a5b4fc; overflow: auto; max-height: 400px; font-family: 'JetBrains Mono', 'Fira Code', monospace; line-height: 1.5; }
+
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.col { min-width: 0; }
+
+.controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.controls label { color: #94a3b8; font-size: 0.8rem; }
+
+.log-entry { padding: 0.4rem 0; border-bottom: 1px solid #1e293b; font-size: 0.8rem; font-family: monospace; display: flex; gap: 1rem; }
+.log-entry:last-child { border-bottom: none; }
+.log-time { color: #64748b; min-width: 10ch; }
+.log-level { min-width: 5ch; font-weight: 600; }
+.log-level.INFO { color: #22d3ee; }
+.log-level.WARN { color: #fbbf24; }
+.log-level.ERROR { color: #f87171; }
+.log-msg { color: #cbd5e1; }
+
+.config-file { margin-bottom: 1rem; }
+.config-file h3 { color: #f1f5f9; font-size: 0.85rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+.config-file h3 .size { color: #64748b; font-weight: 400; font-size: 0.75rem; }
+
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+.metric-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1rem; text-align: center; }
+.metric-value { font-size: 1.5rem; font-weight: 700; color: #60a5fa; }
+.metric-label { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+.metric-card .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.5rem; }
+.metric-card .status-dot.running { background: #22c55e; }
+.metric-card .status-dot.stopped { background: #ef4444; }
+
+.service-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+.service-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; }
+.service-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.service-item .dot.up { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
+.service-item .dot.down { background: #ef4444; }
+.service-item .name { font-size: 0.85rem; color: #e0e0e0; flex: 1; }
+.service-item .port { font-size: 0.75rem; color: #64748b; }
+
+@media (max-width: 768px) { .row { grid-template-columns: 1fr; } .tabs { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<nav>
+  <h1>Aetheris</h1><span class="badge">Dev Sandbox</span>
+  <div class="tabs">
+    <div class="tab active" data-tab="console">API Console</div>
+    <div class="tab" data-tab="logs">System Logs</div>
+    <div class="tab" data-tab="config">Config</div>
+    <div class="tab" data-tab="metrics">Metrics</div>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- API CONSOLE -->
+<div class="panel active" id="panel-console">
+  <div class="card">
+    <h2>API Console <span class="sub">— call any Aetheris API endpoint</span></h2>
+    <div class="controls">
+      <label>Method</label>
+      <select id="api-method"><option>GET</option><option>POST</option><option>DELETE</option></select>
+      <label>Endpoint</label>
+      <select id="api-endpoint" style="flex:1;min-width:250px;">
+        <optgroup label="Core">
+          <option value="api/health">GET /api/health</option>
+          <option value="api/status">GET /api/status</option>
+        </optgroup>
+        <optgroup label="Agents">
+          <option value="api/agents/status">GET /api/agents/status</option>
+          <option value="api/orchestrator/state">GET /api/orchestrator/state</option>
+          <option value="api/orchestrator/forecast">GET /api/orchestrator/forecast</option>
+          <option value="api/mcp/tools">GET /api/mcp/tools</option>
+          <option value="api/a2a/messages">GET /api/a2a/messages</option>
+          <option value="api/tasks">GET /api/tasks</option>
+        </optgroup>
+        <optgroup label="RAG">
+          <option value="api/query">POST /api/query</option>
+          <option value="api/sources">GET /api/sources</option>
+          <option value="api/stats">GET /api/stats</option>
+          <option value="api/knowledge-graph/stats">GET /api/knowledge-graph/stats</option>
+          <option value="api/knowledge-graph/entities">GET /api/knowledge-graph/entities</option>
+          <option value="api/knowledge-graph/relations">GET /api/knowledge-graph/relations</option>
+          <option value="api/coordinator/circuits">GET /api/coordinator/circuits</option>
+        </optgroup>
+        <optgroup label="AI">
+          <option value="api/v1/models">GET /api/v1/models</option>
+        </optgroup>
+        <optgroup label="Dev">
+          <option value="api/dev/logs">GET /api/dev/logs</option>
+          <option value="api/dev/config">GET /api/dev/config</option>
+          <option value="api/dev/metrics">GET /api/dev/metrics</option>
+        </optgroup>
+      </select>
+      <button class="btn btn-primary" onclick="executeApiCall()">Execute</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearApiResponse()">Clear</button>
+    </div>
+    <div id="api-body-container" style="display:none;margin-bottom:0.75rem;">
+      <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.25rem;">Request Body (JSON)</label>
+      <textarea id="api-body" rows="4" style="width:100%;font-family:monospace;font-size:0.8rem;">{ "query": "hello" }</textarea>
+    </div>
+    <div style="display:flex;gap:1rem;align-items:center;margin-bottom:0.75rem;">
+      <span id="api-status" style="font-size:0.8rem;color:#64748b;"></span>
+      <span id="api-latency" style="font-size:0.8rem;color:#64748b;"></span>
+    </div>
+    <pre id="api-response">Select an endpoint and click Execute to test it.</pre>
+  </div>
+</div>
+
+<!-- SYSTEM LOGS -->
+<div class="panel" id="panel-logs">
+  <div class="card">
+    <h2>System Logs</h2>
+    <div class="controls">
+      <button class="btn btn-primary btn-sm" onclick="fetchLogs()">Refresh</button>
+      <span id="log-count" style="font-size:0.8rem;color:#64748b;"></span>
+    </div>
+    <div id="log-container" style="max-height:600px;overflow-y:auto;">
+      <div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">Click Refresh to load logs.</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIG -->
+<div class="panel" id="panel-config">
+  <div class="card">
+    <h2>Configuration Files <span class="sub">— /etc/aetheris/</span></h2>
+    <div class="controls">
+      <button class="btn btn-primary btn-sm" onclick="fetchConfig()">Refresh</button>
+      <span id="config-count" style="font-size:0.8rem;color:#64748b;"></span>
+    </div>
+    <div id="config-container"></div>
+  </div>
+</div>
+
+<!-- METRICS -->
+<div class="panel" id="panel-metrics">
+  <div class="card">
+    <h2>Services</h2>
+    <div id="service-list" class="service-list"></div>
+  </div>
+  <div class="card">
+    <h2>System</h2>
+    <div class="metric-grid" id="system-metrics"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'logs') fetchLogs();
+    if (t.dataset.tab === 'config') fetchConfig();
+    if (t.dataset.tab === 'metrics') fetchMetrics();
+  });
+});
+
+// Show/hide request body for POST endpoints
+document.getElementById('api-endpoint').addEventListener('change', function() {
+  const method = document.getElementById('api-method');
+  const isPost = this.options[this.selectedIndex]?.text.startsWith('POST');
+  document.getElementById('api-method').value = isPost ? 'POST' : 'GET';
+  document.getElementById('api-body-container').style.display =
+    (isPost || method.value === 'POST') ? 'block' : 'none';
+});
+
+document.getElementById('api-method').addEventListener('change', function() {
+  document.getElementById('api-body-container').style.display =
+    this.value === 'POST' ? 'block' : 'none';
+});
+
+async function executeApiCall() {
+  const endpoint = document.getElementById('api-endpoint').value;
+  const method = document.getElementById('api-method').value;
+  const body = document.getElementById('api-body').value;
+  const statusEl = document.getElementById('api-status');
+  const latencyEl = document.getElementById('api-latency');
+  const respEl = document.getElementById('api-response');
+
+  statusEl.textContent = 'Loading...';
+  latencyEl.textContent = '';
+  respEl.textContent = '';
+
+  const url = '/' + endpoint;
+  const opts = { method, headers: { 'Accept': 'application/json' } };
+  if (method === 'POST') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = body;
+  }
+
+  const start = performance.now();
+  try {
+    const r = await fetch(url, opts);
+    const ms = Math.round(performance.now() - start);
+    const text = await r.text();
+    statusEl.textContent = `${r.status} ${r.statusText}`;
+    statusEl.style.color = r.ok ? '#22c55e' : '#ef4444';
+    latencyEl.textContent = `${ms}ms`;
+    try { respEl.textContent = JSON.stringify(JSON.parse(text), null, 2); }
+    catch { respEl.textContent = text; }
+  } catch (e) {
+    statusEl.textContent = 'Error';
+    statusEl.style.color = '#ef4444';
+    latencyEl.textContent = '';
+    respEl.textContent = e.message;
+  }
+}
+
+function clearApiResponse() {
+  document.getElementById('api-response').textContent = 'Cleared.';
+  document.getElementById('api-status').textContent = '';
+  document.getElementById('api-latency').textContent = '';
+}
+
+// LOGS
+async function fetchLogs() {
+  const container = document.getElementById('log-container');
+  const count = document.getElementById('log-count');
+  container.innerHTML = '<div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">Loading...</span></div>';
+  try {
+    const r = await fetch('/api/dev/logs');
+    const data = await r.json();
+    const logs = data.logs || [];
+    count.textContent = `${logs.length} entries`;
+    if (logs.length === 0) {
+      container.innerHTML = '<div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">No log entries.</span></div>';
+      return;
+    }
+    container.innerHTML = logs.map(l =>
+      `<div class="log-entry">
+        <span class="log-time">${l.timestamp || ''}</span>
+        <span class="log-level ${l.level || 'INFO'}">${l.level || 'INFO'}</span>
+        <span class="log-msg">${escapeHtml(l.message || '')}</span>
+      </div>`
+    ).join('');
+  } catch (e) {
+    container.innerHTML = `<div class="log-entry"><span class="log-time">---</span><span class="log-level ERROR">ERROR</span><span class="log-msg">${e.message}</span></div>`;
+  }
+}
+
+// CONFIG
+async function fetchConfig() {
+  const container = document.getElementById('config-container');
+  const count = document.getElementById('config-count');
+  container.innerHTML = '<p style="color:#64748b;">Loading...</p>';
+  try {
+    const r = await fetch('/api/dev/config');
+    const data = await r.json();
+    const files = Object.keys(data);
+    count.textContent = `${files.length} files`;
+    if (files.length === 0) {
+      container.innerHTML = '<p style="color:#64748b;">No config files accessible from this container.</p>';
+      return;
+    }
+    container.innerHTML = files.map(name =>
+      `<div class="config-file">
+        <h3><span style="color:#60a5fa;">${escapeHtml(name)}</span> <span class="size">${data[name].length} bytes</span></h3>
+        <pre>${escapeHtml(data[name])}</pre>
+      </div>`
+    ).join('');
+  } catch (e) {
+    container.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
+  }
+}
+
+// METRICS
+async function fetchMetrics() {
+  const serviceList = document.getElementById('service-list');
+  const sysMetrics = document.getElementById('system-metrics');
+  try {
+    const r = await fetch('/api/dev/metrics');
+    const data = await r.json();
+
+    // Services
+    const services = data.services || [];
+    serviceList.innerHTML = services.map(s =>
+      `<div class="service-item">
+        <span class="dot ${s.status === 'running' ? 'up' : 'down'}"></span>
+        <span class="name">${escapeHtml(s.name)}</span>
+        <span class="port">:${s.port}</span>
+      </div>`
+    ).join('');
+
+    // System metrics
+    const containers = data.containers || {};
+    sysMetrics.innerHTML = `
+      <div class="metric-card"><div class="metric-value">${containers.total || '?'}</div><div class="metric-label">Total Containers</div></div>
+      <div class="metric-card"><div class="metric-value" style="color:${containers.running === containers.total ? '#22c55e' : '#ef4444'}">${containers.running || '?'}</div><div class="metric-label">Running</div></div>
+      <div class="metric-card"><div class="metric-value">${services.length}</div><div class="metric-label">Monitored Services</div></div>
+      <div class="metric-card"><div class="metric-value">${data.uptime_hours || 0}h</div><div class="metric-label">Uptime</div></div>
+    `;
+  } catch (e) {
+    serviceList.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
+    sysMetrics.innerHTML = '';
+  }
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Load data on initial page load
+fetchLogs();
+fetchConfig();
+fetchMetrics();
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod connector;
 mod metrics;
@@ -19,6 +19,7 @@ pub struct AppState {
     pub ai_url: String,
     pub opa_url: String,
     pub port_registry: serde_json::Value,
+    pub dev_logs: Mutex<Vec<String>>,
 }
 
 fn new_connector(state: &AppState) -> connector::AetherisConnector {
@@ -555,6 +556,64 @@ async fn a2a_messages_handler() -> impl IntoResponse {
     .into_response()
 }
 
+async fn dev_logs_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let ts = "2026-05-29T06:00:00Z";
+    let logs = state.dev_logs.lock().unwrap();
+    let entries: Vec<serde_json::Value> = logs.iter().map(|msg| {
+        serde_json::json!({
+            "timestamp": ts,
+            "level": "INFO",
+            "message": msg
+        })
+    }).collect();
+    axum::Json(serde_json::json!({ "logs": entries }))
+}
+
+async fn dev_config_handler(
+    State(_state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let config_dir = std::path::Path::new("/etc/aetheris");
+    let mut files: HashMap<String, String> = HashMap::new();
+    if let Ok(entries) = std::fs::read_dir(config_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        files.insert(name.to_string(), content);
+                    }
+                }
+            }
+        }
+    }
+    axum::Json(files)
+}
+
+async fn dev_metrics_handler() -> impl IntoResponse {
+    axum::Json(serde_json::json!({
+        "containers": {
+            "total": 14,
+            "running": 14
+        },
+        "services": [
+            { "name": "aetheris_core", "status": "running", "port": 8080 },
+            { "name": "aetheris_mesh", "status": "running", "port": 51820 },
+            { "name": "aetheris_stats", "status": "running", "port": 8428 },
+            { "name": "llmvm_nginx", "status": "running", "port": 443 },
+            { "name": "gitea_server", "status": "running", "port": 3000 },
+            { "name": "woodpecker_server", "status": "running", "port": 8000 },
+            { "name": "aetheris_sentinel", "status": "running", "port": 9090 },
+            { "name": "aetheris_vectors", "status": "running", "port": 8000 },
+            { "name": "aetheris_cadvisor", "status": "running", "port": 8010 },
+            { "name": "aetheris_node_exporter", "status": "running", "port": 9100 },
+            { "name": "aetheris_opa", "status": "running", "port": 8181 }
+        ],
+        "uptime_hours": 0
+    }))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Aetheris Core Active. Zero-Trust Mesh Engaged.");
@@ -574,12 +633,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({"services": [], "note": "registry not found"}));
 
+    let ai_endpoint = ai_url.clone();
     let state = Arc::new(AppState {
         vault_path: vault_path.clone(),
         security_watcher: Arc::new(watcher::SecurityWatcher::new()),
         ai_url,
         opa_url,
         port_registry,
+        dev_logs: Mutex::new(vec![
+            "Aetheris Core v0.1.0 starting up".into(),
+            "Zero-Trust Mesh Engaged".into(),
+            format!("AI endpoint: {}", ai_endpoint),
+            "Health check: OK".into(),
+            "Security watcher initialized".into(),
+            "Port registry loaded".into(),
+            "Listening on 0.0.0.0:8080".into(),
+        ]),
     });
 
     tokio::fs::create_dir_all(&vault_path).await.ok();
@@ -610,6 +679,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/orchestrator/forecast", get(orchestrator_forecast_handler))
         .route("/mcp/tools", get(mcp_tools_handler))
         .route("/a2a/messages", get(a2a_messages_handler))
+        .route("/dev/logs", get(dev_logs_handler))
+        .route("/dev/config", get(dev_config_handler))
+        .route("/dev/metrics", get(dev_metrics_handler))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
