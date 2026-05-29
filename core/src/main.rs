@@ -49,7 +49,7 @@ async fn status_handler(
     let core_port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
 
     axum::Json(serde_json::json!({
-        "version": "1.0.0",
+        "version": env!("CARGO_PKG_VERSION"),
         "uptime": uptime,
         "port": core_port,
         "components": {
@@ -281,10 +281,18 @@ async fn rag_sources_handler(
                     let path = entry.path();
                     if path.is_file() {
                         if let Ok(meta) = entry.metadata().await {
+                            let modified = meta.modified()
+                                .ok()
+                                .map(|t| {
+                                    let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                                    let secs = d.as_secs();
+                                    format!("{}", secs)
+                                })
+                                .unwrap_or_default();
                             files.push(serde_json::json!({
                                 "name": path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
                                 "size": meta.len(),
-                                "modified": "2025-01-01T00:00:00Z",
+                                "modified": modified,
                                 "type": path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default(),
                                 "chunks": 0
                             }));
@@ -559,7 +567,10 @@ async fn a2a_messages_handler() -> impl IntoResponse {
 async fn dev_logs_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let ts = "2026-05-29T06:00:00Z";
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
     let logs = state.dev_logs.lock().unwrap();
     let entries: Vec<serde_json::Value> = logs.iter().map(|msg| {
         serde_json::json!({
@@ -594,21 +605,22 @@ async fn dev_config_handler(
 async fn dev_metrics_handler() -> impl IntoResponse {
     axum::Json(serde_json::json!({
         "containers": {
-            "total": 14,
-            "running": 14
+            "total": 12,
+            "running": 12
         },
         "services": [
             { "name": "aetheris_core", "status": "running", "port": 8080 },
             { "name": "aetheris_mesh", "status": "running", "port": 51820 },
             { "name": "aetheris_stats", "status": "running", "port": 8428 },
-            { "name": "llmvm_nginx", "status": "running", "port": 443 },
+            { "name": "llmvm_nginx", "status": "running", "port": 80 },
+            { "name": "aetheris_sentinel", "status": "running", "port": 0 },
+            { "name": "aetheris_vectors", "status": "running", "port": 8000 },
+            { "name": "aetheris_cadvisor", "status": "running", "port": 0 },
+            { "name": "aetheris_node_exporter", "status": "running", "port": 9100 },
+            { "name": "aetheris_opa", "status": "running", "port": 8181 },
             { "name": "gitea_server", "status": "running", "port": 3000 },
             { "name": "woodpecker_server", "status": "running", "port": 8000 },
-            { "name": "aetheris_sentinel", "status": "running", "port": 9090 },
-            { "name": "aetheris_vectors", "status": "running", "port": 8000 },
-            { "name": "aetheris_cadvisor", "status": "running", "port": 8010 },
-            { "name": "aetheris_node_exporter", "status": "running", "port": 9100 },
-            { "name": "aetheris_opa", "status": "running", "port": 8181 }
+            { "name": "llmvm_tunnel", "status": "running", "port": 0 }
         ],
         "uptime_hours": 0
     }))

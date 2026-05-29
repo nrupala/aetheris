@@ -17,5 +17,6 @@ COPY web/index.html /usr/share/nginx/html/index.html
 COPY web/ai/index.html /usr/share/nginx/html/ai/index.html
 COPY web/rag/index.html /usr/share/nginx/html/rag/index.html
 COPY web/agents/index.html /usr/share/nginx/html/agents/index.html
+COPY web/dev/index.html /usr/share/nginx/html/dev/index.html
 
 CMD ["nginx", "-g", "daemon off;"]

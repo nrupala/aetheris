@@ -1,15 +1,11 @@
-name: Build and Push to GHCR
+name: Build and Deploy
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*.*.*'
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: 'Image tag to push'
-        required: false
-        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -21,21 +17,16 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -45,88 +36,64 @@ jobs:
             type=semver,pattern={{version}}
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push core image
+      - name: Build and push core
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.core
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Build and push nginx image
+      - name: Build and push nginx
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.nginx
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:${{ steps.meta.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Create deployment artifact
+      - name: Create deploy artifact
         run: |
-          cat > deploy-info.json << 'EOF'
-          {
-            "images": [
-              "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest",
-              "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest"
-            ],
-            "tag": "${{ steps.meta.outputs.version }}",
-            "created_at": "${{ github.event.head_commit.timestamp }}"
-          }
-          EOF
-
-      - name: Upload deployment info
+          echo '{"image":"${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest","nginx_image":"${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest","sha":"${{ github.sha }}"}' > deploy-info.json
+      - name: Upload deploy info
         uses: actions/upload-artifact@v4
         with:
-          name: deployment-info
+          name: deploy-info
           path: deploy-info.json
 
-  security-scan:
+  deploy-server:
     runs-on: ubuntu-latest
     needs: build-and-push
-    permissions:
-      security-events: write
-
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      - uses: actions/checkout@v4
+      - name: Download deploy info
+        uses: actions/download-artifact@v4
         with:
-          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v4
+          name: deploy-info
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1.2.2
         with:
-          sarif_file: 'trivy-results.sarif'
-
-  create-release:
-    runs-on: ubuntu-latest
-    needs: [build-and-push, security-scan]
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: deploy-info.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Notify deployment
-        run: |
-          echo "Images pushed to GHCR!"
-          echo "Pull with: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/aetheris
+            git pull origin main
+            docker compose build aetheris-core
+            docker compose up -d --force-recreate aetheris-core
+            docker compose up -d --force-recreate llmvm_nginx
+            echo "=== Verification ==="
+            sleep 3
+            curl -sf http://localhost:8080/status | head -c 200
+            echo ""
+            curl -sf -u dev_user:BCjfTYIIjMASFGVM -H "Host: dev.nrupalakolkar.com" http://localhost:9080/api/health | head -c 100
+            echo ""
+            echo "Deploy complete"

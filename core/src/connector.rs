@@ -16,7 +16,11 @@ impl AetherisConnector {
             }
         });
 
-        let res = client.post(&self.opa_url).json(&body).send().await;
+        let res = client
+            .post(format!("{}/v1/data/aetheris/authz/allow", self.opa_url))
+            .json(&body)
+            .send()
+            .await;
         res.map(|r| r.status().is_success()).unwrap_or(false)
     }
 

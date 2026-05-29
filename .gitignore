@@ -12,6 +12,7 @@ Cargo.lock
 .env
 .env.local
 .env.*.local
+.env.*
 
 .vscode/
 .idea/

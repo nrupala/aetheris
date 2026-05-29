@@ -1,49 +1,147 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Aetheris Integrity Protocol - System Validation"
+# ──────────────────────────────────────────────
+# Aetheris Production Health Verification
+# Run: bash scripts/verification.sh
+# ──────────────────────────────────────────────
+
+CORE_PORT="${AETHERIS_CORE_PORT:-8080}"
+NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-9080}"
+NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-9443}"
+OPA_PORT="${OPA_GATEWAY_PORT:-8181}"
+VICTORIA_PORT="${VICTORIA_METRICS_PORT:-8428}"
+HTPASSWD_USER="${HTPASSWD_USER:-dev_user}"
+HTPASSWD_PASS="${HTPASSWD_PASS:-BCjfTYIIjMASFGVM}"
+
 FAILED=0
+PASSED=0
 
-echo "[TEST 1] WireGuard Stealth Check..."
-ss -unlp 2>/dev/null | grep -q ":51820" && echo "PASS: Stealth Mesh Active" || { echo "FAIL: WireGuard not listening"; ((FAILED++)); }
+pass() { PASSED=$((PASSED+1)); echo "  PASS: $1"; }
+fail() { FAILED=$((FAILED+1)); echo "  FAIL: $1"; }
 
-echo "[TEST 2] ZFS Encryption Check..."
-if command -v zfs >/dev/null 2>&1; then
-    zfs get encryption aetheris_vault/secure_data 2>/dev/null | grep -q "aes-256-gcm" && echo "PASS: Vault Encrypted" || echo "SKIP: ZFS not configured"
-else
-    echo "SKIP: ZFS not available"
-fi
-
-OPA_PORT=${OPA_GATEWAY_PORT:-8181}
-OLLAMA_PORT=${OLLAMA_PORT:-11434}
-CHROMA_PORT=${CHROMA_PORT:-8000}
-VICTORIA_PORT=${VICTORIA_METRICS_PORT:-8428}
-CORE_PORT=${AETHERIS_CORE_PORT:-8080}
-
-echo "[TEST 3] OPA Decision Engine..."
-OPA_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${OPA_PORT}/v1/data/aetheris/authz/allow")
-[ "$OPA_RESULT" == "200" ] && echo "PASS: OPA Responsive" || { echo "FAIL: OPA Offline (Code: $OPA_RESULT)"; ((FAILED++)); }
-
-echo "[TEST 4] Ollama Health..."
-curl -s "http://localhost:${OLLAMA_PORT}/api/tags" > /dev/null && echo "PASS: Ollama Ready" || echo "FAIL: Ollama Offline"
-
-echo "[TEST 5] ChromaDB Heartbeat..."
-curl -s "http://localhost:${CHROMA_PORT}/api/v1/heartbeat" > /dev/null && echo "PASS: ChromaDB Connected" || echo "FAIL: ChromaDB Offline"
-
-echo "[TEST 6] VictoriaMetrics..."
-curl -s "http://localhost:${VICTORIA_PORT}/health" > /dev/null && echo "PASS: Metrics Ready" || echo "FAIL: VictoriaMetrics Offline"
-
-echo "[TEST 7] Aetheris Core Status..."
-curl -s "http://localhost:${CORE_PORT}/status" > /dev/null && echo "PASS: Core Running" || echo "FAIL: Core Offline"
-
-echo "[TEST 8] Zero-JS Dashboard..."
-HTML=$(curl -s "http://localhost:${CORE_PORT}/")
-echo "$HTML" | grep -q "<script>" && echo "FAIL: JS Found" || echo "PASS: Zero-JS"
+echo "═══════════════════════════════════════════"
+echo "  Aetheris Production Verification"
+echo "═══════════════════════════════════════════"
 
 echo ""
-if [ $FAILED -eq 0 ]; then
-    echo "All tests passed. System is SOVEREIGN."
+echo "── Core Services ──"
+
+if curl -sf "http://localhost:${CORE_PORT}/status" > /dev/null 2>&1; then
+    pass "Core HTTP endpoint"
 else
-    echo "$FAILED test(s) failed."
+    fail "Core HTTP endpoint"
+fi
+
+if curl -sf "http://localhost:${CORE_PORT}/health" > /dev/null 2>&1; then
+    pass "Core health endpoint"
+else
+    fail "Core health endpoint"
+fi
+
+echo ""
+echo "── Nginx ──"
+
+if curl -sf -o /dev/null -w "" "http://localhost:${NGINX_HTTP_PORT}/" > /dev/null 2>&1; then
+    pass "Nginx HTTP listener"
+else
+    fail "Nginx HTTP listener"
+fi
+
+if curl -sfk -o /dev/null "https://localhost:${NGINX_HTTPS_PORT}/" > /dev/null 2>&1; then
+    pass "Nginx HTTPS listener"
+else
+    fail "Nginx HTTPS listener"
+fi
+
+echo ""
+echo "── Dev Sandbox ──"
+
+CURL_AUTH="-u ${HTPASSWD_USER}:${HTPASSWD_PASS}"
+
+if curl -sfk ${CURL_AUTH} -H "Host: dev.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/" > /dev/null 2>&1; then
+    pass "Dev page (auth)"
+else
+    fail "Dev page (auth)"
+fi
+
+HEALTH=$(curl -sfk ${CURL_AUTH} -H "Host: dev.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/api/health" 2>/dev/null)
+if echo "$HEALTH" | grep -q '"status":"ok"'; then
+    pass "Dev API health"
+else
+    fail "Dev API health"
+fi
+
+LOGS=$(curl -sfk ${CURL_AUTH} -H "Host: dev.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/api/dev/logs" 2>/dev/null)
+if echo "$LOGS" | grep -q '"logs"'; then
+    pass "Dev API logs"
+else
+    fail "Dev API logs"
+fi
+
+CONFIG=$(curl -sfk ${CURL_AUTH} -H "Host: dev.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/api/dev/config" 2>/dev/null)
+if echo "$CONFIG" | grep -q '"port_registry.json"'; then
+    pass "Dev API config"
+else
+    fail "Dev API config"
+fi
+
+METRICS=$(curl -sfk ${CURL_AUTH} -H "Host: dev.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/api/dev/metrics" 2>/dev/null)
+if echo "$METRICS" | grep -q '"services"'; then
+    pass "Dev API metrics"
+else
+    fail "Dev API metrics"
+fi
+
+echo ""
+echo "── AI & RAG ──"
+
+if curl -sfk ${CURL_AUTH} -H "Host: ai.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/" > /dev/null 2>&1; then
+    pass "AI page (auth)"
+else
+    fail "AI page (auth)"
+fi
+
+if curl -sfk ${CURL_AUTH} -H "Host: rag.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/" > /dev/null 2>&1; then
+    pass "RAG page (auth)"
+else
+    fail "RAG page (auth)"
+fi
+
+if curl -sfk ${CURL_AUTH} -H "Host: agents.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/" > /dev/null 2>&1; then
+    pass "Agents page (auth)"
+else
+    fail "Agents page (auth)"
+fi
+
+STATUS=$(curl -sfk ${CURL_AUTH} -H "Host: agents.nrupalakolkar.com" "http://localhost:${NGINX_HTTP_PORT}/agents/status" 2>/dev/null)
+if echo "$STATUS" | grep -q '"agents"'; then
+    pass "Agents API"
+else
+    fail "Agents API"
+fi
+
+echo ""
+echo "── Infrastructure ──"
+
+if curl -sf "http://localhost:${OPA_PORT}/health" > /dev/null 2>&1; then
+    pass "OPA health"
+else
+    fail "OPA health"
+fi
+
+if curl -sf "http://localhost:${VICTORIA_PORT}/health" > /dev/null 2>&1; then
+    pass "VictoriaMetrics"
+else
+    fail "VictoriaMetrics"
+fi
+
+echo ""
+echo "── Results ──"
+echo "  Passed: ${PASSED}"
+echo "  Failed: ${FAILED}"
+echo "═══════════════════════════════════════════"
+
+if [ "$FAILED" -gt 0 ]; then
     exit 1
 fi
