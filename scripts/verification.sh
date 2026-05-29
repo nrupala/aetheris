@@ -124,7 +124,7 @@ fi
 echo ""
 echo "── Infrastructure ──"
 
-if curl -sf "http://localhost:${OPA_PORT}/health" > /dev/null 2>&1; then
+if docker exec aetheris_core wget --spider -q http://aetheris_opa:8181/health 2>/dev/null; then
     pass "OPA health"
 else
     fail "OPA health"
