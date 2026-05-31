@@ -1,23 +1,32 @@
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 use std::time::SystemTime;
 
-use crate::bridge::{ModelBridge, SecurityBridge};
 use super::{Agent, AgentResult, AgentRole, AgentState, AgentStatus, BaseAgent};
+use crate::bridge::{ModelBridge, SecurityBridge};
 
 pub struct PlannerAgent {
     base: BaseAgent,
 }
 
 impl PlannerAgent {
-    pub fn new(model: String, system_prompt: String,
-               model_bridge: Option<Arc<dyn ModelBridge>>,
-               security_bridge: Option<Arc<dyn SecurityBridge>>) -> Self {
+    pub fn new(
+        model: String,
+        system_prompt: String,
+        model_bridge: Option<Arc<dyn ModelBridge>>,
+        security_bridge: Option<Arc<dyn SecurityBridge>>,
+    ) -> Self {
         Self {
             base: BaseAgent::new(
-                AgentRole::Planner, model,
-                if system_prompt.is_empty() { "You are a planning agent. Break down complex tasks into actionable steps with agent assignments.".to_string() } else { system_prompt },
-                model_bridge, security_bridge,
+                AgentRole::Planner,
+                model,
+                if system_prompt.is_empty() {
+                    "You are a planning agent. Break down complex tasks into actionable steps with agent assignments.".to_string()
+                } else {
+                    system_prompt
+                },
+                model_bridge,
+                security_bridge,
             ),
         }
     }
@@ -25,13 +34,27 @@ impl PlannerAgent {
 
 #[async_trait]
 impl Agent for PlannerAgent {
-    fn id(&self) -> &str { &self.base.id }
-    fn role(&self) -> AgentRole { AgentRole::Planner }
-    fn model(&self) -> &str { &self.base.model }
-    fn state(&self) -> AgentState { self.base.state.clone() }
-    fn tasks_completed(&self) -> u64 { self.base.task_history.len() as u64 }
-    fn policy_checks(&self) -> u64 { self.base.policies_checked }
-    fn policy_allowed(&self) -> u64 { self.base.policies_allowed }
+    fn id(&self) -> &str {
+        &self.base.id
+    }
+    fn role(&self) -> AgentRole {
+        AgentRole::Planner
+    }
+    fn model(&self) -> &str {
+        &self.base.model
+    }
+    fn state(&self) -> AgentState {
+        self.base.state.clone()
+    }
+    fn tasks_completed(&self) -> u64 {
+        self.base.task_history.len() as u64
+    }
+    fn policy_checks(&self) -> u64 {
+        self.base.policies_checked
+    }
+    fn policy_allowed(&self) -> u64 {
+        self.base.policies_allowed
+    }
 
     fn get_status(&self) -> AgentStatus {
         AgentStatus {
@@ -68,9 +91,14 @@ impl Agent for PlannerAgent {
             };
         }
 
-        let available_agents = context.get("available_agents")
+        let available_agents = context
+            .get("available_agents")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
 
         let plan_prompt = format!(
@@ -79,12 +107,23 @@ impl Agent for PlannerAgent {
             context.get("kg_context").and_then(|v| v.as_str()).unwrap_or("none")
         );
 
-        let plan_output = self.base.call_llm(vec![
-            serde_json::json!({"role": "system", "content": &self.base.system_prompt}),
-            serde_json::json!({"role": "user", "content": &plan_prompt}),
-        ], 0.1, 4096).await.unwrap_or_else(|e| {
-            format!("{{\"original_task\": \"{}\", \"steps\": [], \"error\": \"{}\"}}", task, e)
-        });
+        let plan_output = self
+            .base
+            .call_llm(
+                vec![
+                    serde_json::json!({"role": "system", "content": &self.base.system_prompt}),
+                    serde_json::json!({"role": "user", "content": &plan_prompt}),
+                ],
+                0.1,
+                4096,
+            )
+            .await
+            .unwrap_or_else(|e| {
+                format!(
+                    "{{\"original_task\": \"{}\", \"steps\": [], \"error\": \"{}\"}}",
+                    task, e
+                )
+            });
 
         let plan: serde_json::Value = serde_json::from_str(&plan_output)
             .unwrap_or_else(|_| serde_json::json!({
@@ -94,7 +133,9 @@ impl Agent for PlannerAgent {
 
         let duration_ms = start.elapsed().unwrap_or_default().as_secs_f64() * 1000.0;
         self.base.state = AgentState::Complete;
-        self.base.task_history.push(serde_json::json!({"task": task, "success": true}));
+        self.base
+            .task_history
+            .push(serde_json::json!({"task": task, "success": true}));
 
         AgentResult {
             agent_id: self.base.id.clone(),

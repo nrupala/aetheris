@@ -1,7 +1,7 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct A2AMessage {
@@ -30,10 +30,20 @@ impl A2AGateway {
         }
     }
 
-    pub fn send(&self, from_agent: &str, to_agent: &str, conversation_id: &str,
-                message_type: &str, content: serde_json::Value, approved: bool) -> String {
+    pub fn send(
+        &self,
+        from_agent: &str,
+        to_agent: &str,
+        conversation_id: &str,
+        message_type: &str,
+        content: serde_json::Value,
+        approved: bool,
+    ) -> String {
         let id = format!("msg_{:x}", {
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
         });
 
         let msg = A2AMessage {
@@ -43,12 +53,16 @@ impl A2AGateway {
             to_agent: to_agent.to_string(),
             message_type: message_type.to_string(),
             content,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
             policy_approved: approved,
         };
 
         let mut convs = self.conversations.lock().unwrap();
-        convs.entry(conversation_id.to_string())
+        convs
+            .entry(conversation_id.to_string())
             .or_insert_with(Vec::new)
             .push(msg.clone());
 
@@ -58,10 +72,14 @@ impl A2AGateway {
 
     pub fn receive(&self, conversation_id: &str, agent_id: &str) -> Vec<A2AMessage> {
         let convs = self.conversations.lock().unwrap();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         if let Some(messages) = convs.get(conversation_id) {
-            messages.iter()
+            messages
+                .iter()
                 .filter(|m| m.to_agent == agent_id && (now - m.timestamp) < self.ttl_seconds)
                 .cloned()
                 .collect()
@@ -72,21 +90,28 @@ impl A2AGateway {
 
     pub fn get_message_log(&self, limit: usize) -> Vec<serde_json::Value> {
         let log = self.message_log.lock().unwrap();
-        log.iter().rev().take(limit).map(|m| {
-            serde_json::json!({
-                "id": m.id,
-                "conversation_id": m.conversation_id,
-                "from_agent": m.from_agent,
-                "to_agent": m.to_agent,
-                "message_type": m.message_type,
-                "timestamp": m.timestamp,
-                "approved": m.policy_approved,
+        log.iter()
+            .rev()
+            .take(limit)
+            .map(|m| {
+                serde_json::json!({
+                    "id": m.id,
+                    "conversation_id": m.conversation_id,
+                    "from_agent": m.from_agent,
+                    "to_agent": m.to_agent,
+                    "message_type": m.message_type,
+                    "timestamp": m.timestamp,
+                    "approved": m.policy_approved,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     pub fn cleanup_expired(&self) -> u64 {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let mut convs = self.conversations.lock().unwrap();
         let mut removed = 0u64;
 

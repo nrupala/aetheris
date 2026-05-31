@@ -22,7 +22,12 @@ impl OrchestratorProxy {
         }
     }
 
-    pub async fn forward(&self, method: Method, uri: &Uri, body: axum::body::Bytes) -> Response<Body> {
+    pub async fn forward(
+        &self,
+        method: Method,
+        uri: &Uri,
+        body: axum::body::Bytes,
+    ) -> Response<Body> {
         let path = uri.path();
         let target_path = path.strip_prefix("/").unwrap_or(path);
         let target_url = format!("{}/{}", self.base_url, target_path);
@@ -36,14 +41,16 @@ impl OrchestratorProxy {
             _ => reqwest::Method::GET,
         };
 
-        let req = self.client
+        let req = self
+            .client
             .request(req_method, &target_url)
             .body(body.to_vec())
             .header("Content-Type", "application/json");
 
         match req.send().await {
             Ok(resp) => {
-                let status_code = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+                let status_code =
+                    StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
                 let body_bytes = resp.bytes().await.unwrap_or_default();
                 let mut response = Response::new(Body::from(body_bytes));
                 *response.status_mut() = status_code;
@@ -51,7 +58,10 @@ impl OrchestratorProxy {
             }
             Err(e) => Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
-                .body(Body::from(format!("{{\"error\": \"Orchestrator proxy failed: {}\"}}", e)))
+                .body(Body::from(format!(
+                    "{{\"error\": \"Orchestrator proxy failed: {}\"}}",
+                    e
+                )))
                 .unwrap(),
         }
     }

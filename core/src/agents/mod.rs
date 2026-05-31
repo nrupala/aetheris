@@ -1,11 +1,11 @@
+pub mod coder;
 pub mod planner;
 pub mod researcher;
-pub mod coder;
 pub mod reviewer;
 
-use std::sync::Arc;
 use async_trait::async_trait;
 use serde::Serialize;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::bridge::{ModelBridge, SecurityBridge};
@@ -115,11 +115,18 @@ pub struct BaseAgent {
 }
 
 impl BaseAgent {
-    pub fn new(role: AgentRole, model: String, system_prompt: String,
-               model_bridge: Option<Arc<dyn ModelBridge>>,
-               security_bridge: Option<Arc<dyn SecurityBridge>>) -> Self {
+    pub fn new(
+        role: AgentRole,
+        model: String,
+        system_prompt: String,
+        model_bridge: Option<Arc<dyn ModelBridge>>,
+        security_bridge: Option<Arc<dyn SecurityBridge>>,
+    ) -> Self {
         let id = format!("{}_{:x}", role.as_str(), {
-            let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+            let t = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
             t
         });
         Self {
@@ -142,10 +149,21 @@ impl BaseAgent {
             bridge.authorize(self.role.as_str(), action).await
         } else {
             let local_allowed: bool = match self.role {
-                AgentRole::Researcher => matches!(action, "query" | "read" | "extract_entities" | "list_sources"),
-                AgentRole::Coder => matches!(action, "write" | "read" | "execute_readonly" | "list_directory"),
-                AgentRole::Reviewer => matches!(action, "read" | "evaluate" | "query_kg" | "list_sources"),
-                AgentRole::Planner => matches!(action, "read" | "query" | "query_kg" | "list_agents" | "coordinate"),
+                AgentRole::Researcher => matches!(
+                    action,
+                    "query" | "read" | "extract_entities" | "list_sources"
+                ),
+                AgentRole::Coder => matches!(
+                    action,
+                    "write" | "read" | "execute_readonly" | "list_directory"
+                ),
+                AgentRole::Reviewer => {
+                    matches!(action, "read" | "evaluate" | "query_kg" | "list_sources")
+                }
+                AgentRole::Planner => matches!(
+                    action,
+                    "read" | "query" | "query_kg" | "list_agents" | "coordinate"
+                ),
             };
             local_allowed
         };
@@ -155,13 +173,20 @@ impl BaseAgent {
         allowed
     }
 
-    pub async fn call_llm(&self, messages: Vec<serde_json::Value>, _temperature: f64, _max_tokens: u64) -> Result<String, String> {
+    pub async fn call_llm(
+        &self,
+        messages: Vec<serde_json::Value>,
+        _temperature: f64,
+        _max_tokens: u64,
+    ) -> Result<String, String> {
         if let Some(ref bridge) = self.model_bridge {
-            let system = messages.iter()
+            let system = messages
+                .iter()
                 .find(|m| m["role"] == "system")
                 .and_then(|m| m["content"].as_str())
                 .unwrap_or("You are a helpful assistant.");
-            let user = messages.iter()
+            let user = messages
+                .iter()
                 .find(|m| m["role"] == "user")
                 .and_then(|m| m["content"].as_str())
                 .unwrap_or("");
@@ -173,13 +198,37 @@ impl BaseAgent {
     }
 }
 
-pub fn create_agent(role: AgentRole, model: String, system_prompt: String,
-                    model_bridge: Option<Arc<dyn ModelBridge>>,
-                    security_bridge: Option<Arc<dyn SecurityBridge>>) -> Box<dyn Agent> {
+pub fn create_agent(
+    role: AgentRole,
+    model: String,
+    system_prompt: String,
+    model_bridge: Option<Arc<dyn ModelBridge>>,
+    security_bridge: Option<Arc<dyn SecurityBridge>>,
+) -> Box<dyn Agent> {
     match role {
-        AgentRole::Researcher => Box::new(researcher::ResearcherAgent::new(model, system_prompt, model_bridge, security_bridge)),
-        AgentRole::Coder => Box::new(coder::CoderAgent::new(model, system_prompt, model_bridge, security_bridge)),
-        AgentRole::Reviewer => Box::new(reviewer::ReviewerAgent::new(model, system_prompt, model_bridge, security_bridge)),
-        AgentRole::Planner => Box::new(planner::PlannerAgent::new(model, system_prompt, model_bridge, security_bridge)),
+        AgentRole::Researcher => Box::new(researcher::ResearcherAgent::new(
+            model,
+            system_prompt,
+            model_bridge,
+            security_bridge,
+        )),
+        AgentRole::Coder => Box::new(coder::CoderAgent::new(
+            model,
+            system_prompt,
+            model_bridge,
+            security_bridge,
+        )),
+        AgentRole::Reviewer => Box::new(reviewer::ReviewerAgent::new(
+            model,
+            system_prompt,
+            model_bridge,
+            security_bridge,
+        )),
+        AgentRole::Planner => Box::new(planner::PlannerAgent::new(
+            model,
+            system_prompt,
+            model_bridge,
+            security_bridge,
+        )),
     }
 }

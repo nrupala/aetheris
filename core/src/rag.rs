@@ -90,7 +90,10 @@ pub struct TextChunker {
 
 impl TextChunker {
     pub fn new(chunk_size: usize, chunk_overlap: usize) -> Self {
-        Self { chunk_size, chunk_overlap }
+        Self {
+            chunk_size,
+            chunk_overlap,
+        }
     }
 
     fn count_tokens(text: &str) -> usize {
@@ -180,7 +183,8 @@ impl TextChunker {
                                 source: source.to_string(),
                                 token_count: sent_tokens,
                             });
-                            let overlap_start = sent_buffer.len().saturating_sub(self.chunk_overlap);
+                            let overlap_start =
+                                sent_buffer.len().saturating_sub(self.chunk_overlap);
                             let overlap = sent_buffer[overlap_start..].to_string();
                             let overlap_tokens = Self::count_tokens(&overlap);
                             sent_buffer = if !overlap.is_empty() {
@@ -195,7 +199,8 @@ impl TextChunker {
                             let mut word_tokens = 0;
                             for word in &words {
                                 let w_tok = Self::count_tokens(word);
-                                if word_tokens + w_tok > self.chunk_size && !word_buffer.is_empty() {
+                                if word_tokens + w_tok > self.chunk_size && !word_buffer.is_empty()
+                                {
                                     let hard_chunk = word_buffer.join(" ");
                                     chunks.push(Chunk {
                                         text: hard_chunk,
@@ -203,9 +208,11 @@ impl TextChunker {
                                         source: source.to_string(),
                                         token_count: word_tokens,
                                     });
-                                    let keep = word_buffer.len().saturating_sub(self.chunk_overlap / 4);
+                                    let keep =
+                                        word_buffer.len().saturating_sub(self.chunk_overlap / 4);
                                     word_buffer = word_buffer[keep..].to_vec();
-                                    word_tokens = word_buffer.iter().map(|w| Self::count_tokens(w)).sum();
+                                    word_tokens =
+                                        word_buffer.iter().map(|w| Self::count_tokens(w)).sum();
                                 }
                                 word_buffer.push(word);
                                 word_tokens += w_tok;
@@ -250,7 +257,9 @@ impl TextChunker {
                     token_count: self.chunk_size,
                 });
 
-                current_text = current_text[self.chunk_size.min(current_text.len())..].trim_start().to_string();
+                current_text = current_text[self.chunk_size.min(current_text.len())..]
+                    .trim_start()
+                    .to_string();
                 current_tokens = Self::count_tokens(&current_text);
             }
         }
@@ -279,10 +288,11 @@ impl VectorStore {
     pub fn new(db_path: &str) -> Result<Self, String> {
         let path = PathBuf::from(db_path);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create db dir: {}", e))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create db dir: {}", e))?;
         }
-        let conn = rusqlite::Connection::open(&path)
-            .map_err(|e| format!("Failed to open db: {}", e))?;
+        let conn =
+            rusqlite::Connection::open(&path).map_err(|e| format!("Failed to open db: {}", e))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
             .map_err(|e| format!("Failed to set pragmas: {}", e))?;
         conn.execute_batch(
@@ -300,15 +310,27 @@ impl VectorStore {
                 dimension INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
-            CREATE INDEX IF NOT EXISTS idx_chunks_source_index ON chunks(source, chunk_index);"
-        ).map_err(|e| format!("Failed to init schema: {}", e))?;
+            CREATE INDEX IF NOT EXISTS idx_chunks_source_index ON chunks(source, chunk_index);",
+        )
+        .map_err(|e| format!("Failed to init schema: {}", e))?;
 
-        Ok(Self { conn: Arc::new(Mutex::new(conn)), db_path: path })
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+            db_path: path,
+        })
     }
 
-    pub fn add_chunks(&self, chunks: &[Chunk], embeddings: &[Vec<f32>]) -> Result<Vec<i64>, String> {
+    pub fn add_chunks(
+        &self,
+        chunks: &[Chunk],
+        embeddings: &[Vec<f32>],
+    ) -> Result<Vec<i64>, String> {
         if chunks.len() != embeddings.len() {
-            return Err(format!("Mismatch: {} chunks vs {} embeddings", chunks.len(), embeddings.len()));
+            return Err(format!(
+                "Mismatch: {} chunks vs {} embeddings",
+                chunks.len(),
+                embeddings.len()
+            ));
         }
 
         let conn = self.conn.lock().unwrap();
@@ -322,9 +344,7 @@ impl VectorStore {
                 embedding.clone()
             };
 
-            let vector_bytes: Vec<u8> = normalized.iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect();
+            let vector_bytes: Vec<u8> = normalized.iter().flat_map(|v| v.to_le_bytes()).collect();
             let dimension = normalized.len() as i64;
 
             conn.execute(
@@ -337,7 +357,8 @@ impl VectorStore {
             conn.execute(
                 "INSERT INTO embeddings (chunk_id, vector, dimension) VALUES (?1, ?2, ?3)",
                 rusqlite::params![chunk_id, vector_bytes, dimension],
-            ).map_err(|e| format!("Failed to insert embedding: {}", e))?;
+            )
+            .map_err(|e| format!("Failed to insert embedding: {}", e))?;
 
             ids.push(chunk_id);
         }
@@ -345,7 +366,11 @@ impl VectorStore {
         Ok(ids)
     }
 
-    pub fn search(&self, query_embedding: &[f32], top_k: usize) -> Result<Vec<SearchResult>, String> {
+    pub fn search(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<SearchResult>, String> {
         let norm: f32 = query_embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
         let query_norm: Vec<f32> = if norm > 0.0 {
             query_embedding.iter().map(|v| v / norm).collect()
@@ -359,25 +384,36 @@ impl VectorStore {
              FROM embeddings e JOIN chunks c ON c.id = e.chunk_id"
         ).map_err(|e| format!("Failed to prepare search: {}", e))?;
 
-        let rows = stmt.query_map([], |row| {
-            let chunk_id: i64 = row.get(0)?;
-            let vector_bytes: Vec<u8> = row.get(1)?;
-            let _dimension: i64 = row.get(2)?;
-            let text: String = row.get(3)?;
-            let source: String = row.get(4)?;
-            let chunk_index: i64 = row.get(5)?;
-            let token_count: i64 = row.get(6)?;
-            Ok((chunk_id, vector_bytes, text, source, chunk_index as usize, token_count as usize))
-        }).map_err(|e| format!("Failed to query embeddings: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let chunk_id: i64 = row.get(0)?;
+                let vector_bytes: Vec<u8> = row.get(1)?;
+                let _dimension: i64 = row.get(2)?;
+                let text: String = row.get(3)?;
+                let source: String = row.get(4)?;
+                let chunk_index: i64 = row.get(5)?;
+                let token_count: i64 = row.get(6)?;
+                Ok((
+                    chunk_id,
+                    vector_bytes,
+                    text,
+                    source,
+                    chunk_index as usize,
+                    token_count as usize,
+                ))
+            })
+            .map_err(|e| format!("Failed to query embeddings: {}", e))?;
 
         let mut results: Vec<SearchResult> = Vec::new();
         for row in rows.flatten() {
             let (chunk_id, vector_bytes, text, source, chunk_index, token_count) = row;
-            let stored: Vec<f32> = vector_bytes.chunks(4)
+            let stored: Vec<f32> = vector_bytes
+                .chunks(4)
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
 
-            let score: f64 = query_norm.iter()
+            let score: f64 = query_norm
+                .iter()
                 .zip(stored.iter())
                 .map(|(a, b)| (*a as f64) * (*b as f64))
                 .sum();
@@ -392,7 +428,11 @@ impl VectorStore {
             });
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(top_k);
         Ok(results)
     }
@@ -404,14 +444,16 @@ impl VectorStore {
              FROM chunks GROUP BY source ORDER BY chunk_count DESC"
         ).map_err(|e| format!("Failed to prepare sources query: {}", e))?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(SourceInfo {
-                source: row.get(0)?,
-                chunk_count: row.get(1)?,
-                first_seen: row.get::<_, String>(2).unwrap_or_default(),
-                last_seen: row.get::<_, String>(3).unwrap_or_default(),
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(SourceInfo {
+                    source: row.get(0)?,
+                    chunk_count: row.get(1)?,
+                    first_seen: row.get::<_, String>(2).unwrap_or_default(),
+                    last_seen: row.get::<_, String>(3).unwrap_or_default(),
+                })
             })
-        }).map_err(|e| format!("Failed to query sources: {}", e))?;
+            .map_err(|e| format!("Failed to query sources: {}", e))?;
 
         let mut sources: Vec<SourceInfo> = Vec::new();
         for row in rows.flatten() {
@@ -428,11 +470,15 @@ impl VectorStore {
             .map_err(|e| format!("Failed to count chunks: {}", e))?;
 
         let total_sources: i64 = conn
-            .query_row("SELECT COUNT(DISTINCT source) FROM chunks", [], |row| row.get(0))
+            .query_row("SELECT COUNT(DISTINCT source) FROM chunks", [], |row| {
+                row.get(0)
+            })
             .map_err(|e| format!("Failed to count sources: {}", e))?;
 
         let dimension: i64 = conn
-            .query_row("SELECT dimension FROM embeddings LIMIT 1", [], |row| row.get(0))
+            .query_row("SELECT dimension FROM embeddings LIMIT 1", [], |row| {
+                row.get(0)
+            })
             .unwrap_or(0);
 
         let db_size = std::fs::metadata(&self.db_path)
@@ -451,7 +497,10 @@ impl VectorStore {
     pub fn delete_source(&self, source: &str) -> Result<usize, String> {
         let conn = self.conn.lock().unwrap();
         let count = conn
-            .execute("DELETE FROM chunks WHERE source = ?1", rusqlite::params![source])
+            .execute(
+                "DELETE FROM chunks WHERE source = ?1",
+                rusqlite::params![source],
+            )
             .map_err(|e| format!("Failed to delete source: {}", e))?;
         Ok(count)
     }

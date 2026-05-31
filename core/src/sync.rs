@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
@@ -31,9 +31,14 @@ pub async fn download(
             let body = Body::from_stream(stream);
             Response::builder()
                 .header(header::CONTENT_TYPE, "application/octet-stream")
-                .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+                .header(
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{}\"", filename),
+                )
                 .body(body)
-                .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Stream Error").into_response())
+                .unwrap_or_else(|_| {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Stream Error").into_response()
+                })
         }
         Err(_) => (StatusCode::NOT_FOUND, "File not found").into_response(),
     }

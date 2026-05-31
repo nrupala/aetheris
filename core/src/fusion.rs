@@ -18,7 +18,7 @@ impl ApiKeyEntry {
         if self.key.len() <= 8 {
             return "********".to_string();
         }
-        format!("{}...{}", &self.key[..4], &self.key[self.key.len()-4..])
+        format!("{}...{}", &self.key[..4], &self.key[self.key.len() - 4..])
     }
 
     pub fn to_public(&self) -> serde_json::Value {
@@ -45,12 +45,17 @@ impl KeyManager {
         } else {
             HashMap::new()
         };
-        Self { keys: Mutex::new(keys), store_path }
+        Self {
+            keys: Mutex::new(keys),
+            store_path,
+        }
     }
 
     pub fn get(&self, service: &str) -> Option<String> {
         let keys = self.keys.lock().unwrap();
-        keys.get(service).filter(|e| e.enabled).map(|e| e.key.clone())
+        keys.get(service)
+            .filter(|e| e.enabled)
+            .map(|e| e.key.clone())
     }
 
     pub fn set(&self, service: &str, key: String, label: String) -> Result<(), String> {
@@ -101,7 +106,11 @@ pub struct OpenRouterBridge {
 
 impl OpenRouterBridge {
     pub fn new(url: String, default_model: String, key_manager: Arc<KeyManager>) -> Self {
-        Self { url, default_model, key_manager }
+        Self {
+            url,
+            default_model,
+            key_manager,
+        }
     }
 
     fn api_key(&self) -> Option<String> {
@@ -111,7 +120,9 @@ impl OpenRouterBridge {
 
 #[async_trait]
 impl AetherisBridge for OpenRouterBridge {
-    fn name(&self) -> &str { "openrouter" }
+    fn name(&self) -> &str {
+        "openrouter"
+    }
 
     async fn health_check(&self) -> bool {
         self.api_key().is_some()
@@ -121,8 +132,14 @@ impl AetherisBridge for OpenRouterBridge {
 #[async_trait]
 impl ModelBridge for OpenRouterBridge {
     async fn query(&self, prompt: &str, model: &str) -> Result<String, String> {
-        let api_key = self.api_key().ok_or_else(|| "OpenRouter not configured".to_string())?;
-        let model = if model.is_empty() { &self.default_model } else { model };
+        let api_key = self
+            .api_key()
+            .ok_or_else(|| "OpenRouter not configured".to_string())?;
+        let model = if model.is_empty() {
+            &self.default_model
+        } else {
+            model
+        };
         let payload = serde_json::json!({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -138,7 +155,9 @@ impl ModelBridge for OpenRouterBridge {
             .send()
             .await
             .map_err(|e| format!("OpenRouter request failed: {}", e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse OpenRouter response: {}", e))?;
         body["choices"][0]["message"]["content"]
             .as_str()
@@ -154,12 +173,19 @@ impl ModelBridge for OpenRouterBridge {
         Err("OpenRouter does not support embeddings".to_string())
     }
 
-    async fn rerank(&self, _query: &str, _documents: Vec<String>, _model: &str) -> Result<Vec<f64>, String> {
+    async fn rerank(
+        &self,
+        _query: &str,
+        _documents: Vec<String>,
+        _model: &str,
+    ) -> Result<Vec<f64>, String> {
         Err("OpenRouter does not support reranking".to_string())
     }
 
     async fn list_models(&self) -> Result<Vec<String>, String> {
-        let api_key = self.api_key().ok_or_else(|| "OpenRouter not configured".to_string())?;
+        let api_key = self
+            .api_key()
+            .ok_or_else(|| "OpenRouter not configured".to_string())?;
         let client = reqwest::Client::new();
         let res = client
             .get(format!("{}/v1/models", self.url))
@@ -167,10 +193,17 @@ impl ModelBridge for OpenRouterBridge {
             .send()
             .await
             .map_err(|e| format!("OpenRouter list models failed: {}", e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse OpenRouter models: {}", e))?;
-        let models = body["data"].as_array()
-            .map(|arr| arr.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
+        let models = body["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         Ok(models)
     }
@@ -190,8 +223,14 @@ impl ExaSearchBridge {
         self.key_manager.get("exasearch")
     }
 
-    pub async fn search(&self, query: &str, num_results: usize) -> Result<serde_json::Value, String> {
-        let api_key = self.api_key().ok_or_else(|| "ExaSearch not configured".to_string())?;
+    pub async fn search(
+        &self,
+        query: &str,
+        num_results: usize,
+    ) -> Result<serde_json::Value, String> {
+        let api_key = self
+            .api_key()
+            .ok_or_else(|| "ExaSearch not configured".to_string())?;
         let payload = serde_json::json!({
             "query": query,
             "num_results": num_results,
@@ -205,7 +244,9 @@ impl ExaSearchBridge {
             .send()
             .await
             .map_err(|e| format!("ExaSearch request failed: {}", e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse ExaSearch response: {}", e))?;
         Ok(body)
     }
@@ -236,7 +277,12 @@ impl FusionRouter {
         exasearch: Option<Arc<ExaSearchBridge>>,
         key_manager: Arc<KeyManager>,
     ) -> Self {
-        Self { ollama, openrouter, exasearch, key_manager }
+        Self {
+            ollama,
+            openrouter,
+            exasearch,
+            key_manager,
+        }
     }
 
     pub async fn query_with_fallback(&self, prompt: &str, model: &str) -> Result<String, String> {

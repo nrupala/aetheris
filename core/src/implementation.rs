@@ -1,5 +1,5 @@
+use crate::bridge::{AetherisBridge, ModelBridge, SecurityBridge};
 use async_trait::async_trait;
-use crate::bridge::{ModelBridge, SecurityBridge, AetherisBridge};
 
 pub struct OllamaBridge {
     pub url: String,
@@ -8,7 +8,10 @@ pub struct OllamaBridge {
 
 impl OllamaBridge {
     pub fn new(url: String) -> Self {
-        Self { url, default_model: "qwen3:8b".to_string() }
+        Self {
+            url,
+            default_model: "qwen3:8b".to_string(),
+        }
     }
 
     #[allow(dead_code)]
@@ -19,7 +22,9 @@ impl OllamaBridge {
 
 #[async_trait]
 impl AetherisBridge for OllamaBridge {
-    fn name(&self) -> &str { "ollama" }
+    fn name(&self) -> &str {
+        "ollama"
+    }
 
     async fn health_check(&self) -> bool {
         reqwest::Client::new()
@@ -43,12 +48,19 @@ impl OllamaBridge {
             .send()
             .await
             .map_err(|e| format!("Embedding request failed for {}: {}", model, e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
-        body["embedding"].as_array()
+        body["embedding"]
+            .as_array()
             .ok_or_else(|| format!("No embedding in response from {}", model))?
             .iter()
-            .map(|v| v.as_f64().map(|f| f as f32).ok_or_else(|| "Non-float in embedding".to_string()))
+            .map(|v| {
+                v.as_f64()
+                    .map(|f| f as f32)
+                    .ok_or_else(|| "Non-float in embedding".to_string())
+            })
             .collect()
     }
 }
@@ -72,11 +84,20 @@ impl ModelBridge for OllamaBridge {
 
     async fn embed_and_index(&self, content: &str, file_id: &str) -> Result<(), String> {
         let _embedding = self.embed(content).await?;
-        println!("Ollama Bridge: Indexed {} ({} dims)", file_id, _embedding.len());
+        println!(
+            "Ollama Bridge: Indexed {} ({} dims)",
+            file_id,
+            _embedding.len()
+        );
         Ok(())
     }
 
-    async fn rerank(&self, query: &str, documents: Vec<String>, model: &str) -> Result<Vec<f64>, String> {
+    async fn rerank(
+        &self,
+        query: &str,
+        documents: Vec<String>,
+        model: &str,
+    ) -> Result<Vec<f64>, String> {
         if documents.is_empty() {
             return Ok(vec![]);
         }
@@ -91,10 +112,17 @@ impl ModelBridge for OllamaBridge {
             .send()
             .await
             .map_err(|e| format!("Rerank request failed: {}", e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse rerank response: {}", e))?;
-        body["results"].as_array()
-            .map(|arr| arr.iter().filter_map(|r| r["relevance_score"].as_f64()).collect())
+        body["results"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|r| r["relevance_score"].as_f64())
+                    .collect()
+            })
             .ok_or_else(|| "No results in rerank response".to_string())
     }
 
@@ -104,16 +132,27 @@ impl ModelBridge for OllamaBridge {
             .send()
             .await
             .map_err(|e| format!("Failed to list models: {}", e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse models response: {}", e))?;
-        let models = body["data"].as_array()
-            .map(|arr| arr.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
+        let models = body["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         Ok(models)
     }
 
     async fn query(&self, prompt: &str, model: &str) -> Result<String, String> {
-        let model = if model.is_empty() { &self.default_model } else { model };
+        let model = if model.is_empty() {
+            &self.default_model
+        } else {
+            model
+        };
         let payload = serde_json::json!({
             "model": model,
             "messages": [{
@@ -129,17 +168,23 @@ impl ModelBridge for OllamaBridge {
             .send()
             .await
             .map_err(|e| format!("AI request failed: {}", e))?;
-        let body: serde_json::Value = res.json().await
+        let body: serde_json::Value = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
         let msg = &body["choices"][0]["message"];
-        msg["content"].as_str().filter(|s| !s.is_empty())
+        msg["content"]
+            .as_str()
+            .filter(|s| !s.is_empty())
             .or_else(|| msg["reasoning_content"].as_str().filter(|s| !s.is_empty()))
             .map(|s| s.to_string())
             .ok_or_else(|| "No content in response".to_string())
     }
 }
 
-pub struct OpaBridge { pub url: String }
+pub struct OpaBridge {
+    pub url: String,
+}
 
 impl OpaBridge {
     pub fn new(url: String) -> Self {
@@ -149,7 +194,9 @@ impl OpaBridge {
 
 #[async_trait]
 impl AetherisBridge for OpaBridge {
-    fn name(&self) -> &str { "opa" }
+    fn name(&self) -> &str {
+        "opa"
+    }
 
     async fn health_check(&self) -> bool {
         reqwest::Client::new()
