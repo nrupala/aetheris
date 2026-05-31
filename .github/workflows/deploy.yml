@@ -91,7 +91,7 @@ jobs:
             docker compose up -d --force-recreate aetheris-core
             docker compose up -d --force-recreate llmvm_nginx
             echo "=== Pulling models ==="
-            for model in "nomic-embed-text" "qwen3:8b" "deepseek-r1:8b" "phi4-mini" "phi4-reasoning" "bge-reranker-v2-m3"; do
+            for model in "nomic-embed-text" "qwen3:8b" "deepseek-r1:8b" "phi4-mini" "bge-reranker-v2-m3"; do
               docker exec aetheris_ollama ollama pull "$model" 2>/dev/null \
                 && echo "  $model: OK" \
                 || echo "  $model: SKIP"
