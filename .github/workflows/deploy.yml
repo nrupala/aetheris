@@ -90,6 +90,9 @@ jobs:
             docker compose build aetheris-core
             docker compose up -d --force-recreate aetheris-core
             docker compose up -d --force-recreate llmvm_nginx
+            echo "=== Pulling models ==="
+            docker exec aetheris_ollama ollama pull nomic-embed-text 2>/dev/null && echo "  nomic-embed-text: OK" || echo "  nomic-embed-text: SKIP (already present or offline)"
+            docker exec aetheris_ollama ollama pull qwen2.5:14b 2>/dev/null && echo "  qwen2.5:14b: OK" || echo "  qwen2.5:14b: SKIP"
             echo "=== Verification ==="
             sleep 3
             curl -sf http://localhost:8080/status | head -c 200
