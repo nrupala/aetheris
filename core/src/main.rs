@@ -212,18 +212,36 @@ async fn rag_query_handler(
     let query = payload.get("query").and_then(|v| v.as_str()).unwrap_or("");
     let use_reasoning = payload.get("reasoning_enabled").and_then(|v| v.as_bool()).unwrap_or(cfg.reasoning_enabled);
     let top_k = payload.get("top_k").and_then(|v| v.as_u64()).unwrap_or(cfg.top_k as u64) as usize;
+    let use_reranker = payload.get("reranker_enabled").and_then(|v| v.as_bool()).unwrap_or(cfg.reranker_enabled);
 
     state.wal.lock().unwrap().append(wal::WalEntry::AiQuery { model: cfg.query_model.clone(), tokens: 0 }).ok();
 
     let context_chunks = if let Some(ref store) = state.vector_store {
         if let Ok(query_embed) = state.model_bridge.embed(query).await {
-            store.search(&query_embed, top_k).ok()
+            let candidates = store.search(&query_embed, top_k * 3).ok();
+            if let Some(mut chunks) = candidates {
+                if use_reranker && chunks.len() > 1 {
+                    let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
+                    if let Ok(scores) = state.model_bridge.rerank(query, texts, &cfg.reranker_model).await {
+                        for (i, score) in scores.iter().enumerate() {
+                            if i < chunks.len() {
+                                chunks[i].score = *score;
+                            }
+                        }
+                        chunks.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                        chunks.truncate(top_k);
+                    }
+                } else {
+                    chunks.truncate(top_k);
+                }
+                Some(chunks)
+            } else { None }
         } else { None }
     } else { None };
 
     let prompt = if let Some(ref chunks) = context_chunks {
         let context: String = chunks.iter()
-            .map(|c| format!("[Source: {}]\n{}", c.source, c.text))
+            .map(|c| format!("[Source: {}] (relevance: {:.2})\n{}", c.source, c.score, c.text))
             .collect::<Vec<_>>()
             .join("\n\n---\n\n");
         let reasoning = if use_reasoning { " Use reasoning to explain your thought process." } else { "" };
@@ -250,6 +268,8 @@ async fn rag_query_handler(
                 "top_k": top_k,
                 "reasoning": parsed.get("reasoning").and_then(|v| v.as_str()).unwrap_or(""),
                 "chunks_retrieved": context_chunks.as_ref().map(|c| c.len()).unwrap_or(0),
+                "reranker_used": use_reranker,
+                "reranker_model": cfg.reranker_model,
                 "took_ms": 0,
             })).into_response()
         }

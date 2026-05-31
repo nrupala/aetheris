@@ -192,9 +192,16 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Embedding Models (ordered fallback, comma-separated)</label>
         <input id="rag-embed-models" type="text" value="nomic-embed-text, phi-4-reasoning-plus-q4_k_m, qwen2.5:14b" style="width:100%;font-family:monospace;">
       </div>
-      <div style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:center;">
+      <div style="grid-column:1/-1;">
+        <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Reranker Model</label>
+        <input id="rag-reranker-model" type="text" value="bge-reranker-v2-m3" style="width:100%;font-family:monospace;">
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center;">
         <label style="color:#94a3b8;font-size:0.8rem;display:flex;align-items:center;gap:0.5rem;">
           <input id="rag-reasoning" type="checkbox"> Enable Reasoning
+        </label>
+        <label style="color:#94a3b8;font-size:0.8rem;display:flex;align-items:center;gap:0.5rem;">
+          <input id="rag-reranker-enabled" type="checkbox" checked> Enable Reranker
         </label>
       </div>
     </div>
@@ -224,6 +231,9 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
       <input id="rag-test-topk" type="number" value="5" min="1" max="50" style="width:70px;">
       <label style="display:flex;align-items:center;gap:0.25rem;">
         <input id="rag-test-reasoning" type="checkbox"> Reasoning
+      </label>
+      <label style="display:flex;align-items:center;gap:0.25rem;">
+        <input id="rag-test-reranker" type="checkbox" checked> Rerank
       </label>
       <button class="btn btn-primary" onclick="runRagTest()">Query</button>
     </div>
@@ -556,9 +566,11 @@ async function loadRagConfig() {
     document.getElementById('rag-chunk-size').value = cfg.chunk_size || 512;
     document.getElementById('rag-chunk-overlap').value = cfg.chunk_overlap || 64;
     document.getElementById('rag-top-k').value = cfg.top_k || 5;
-    document.getElementById('rag-query-model').value = cfg.query_model || 'qwen2.5:14b';
-    document.getElementById('rag-embed-models').value = (cfg.embed_models || ['nomic-embed-text', 'phi-4-reasoning-plus-q4_k_m', 'qwen2.5:14b']).join(', ');
+    document.getElementById('rag-query-model').value = cfg.query_model || 'qwen3:8b';
+    document.getElementById('rag-embed-models').value = (cfg.embed_models || ['nomic-embed-text', 'deepseek-r1:8b', 'qwen3:8b']).join(', ');
     document.getElementById('rag-reasoning').checked = cfg.reasoning_enabled || false;
+    document.getElementById('rag-reranker-model').value = cfg.reranker_model || 'bge-reranker-v2-m3';
+    document.getElementById('rag-reranker-enabled').checked = cfg.reranker_enabled !== false;
     status.textContent = 'Loaded';
     status.style.color = '#22c55e';
   } catch (e) {
@@ -574,9 +586,11 @@ async function saveRagConfig() {
     chunk_size: parseInt(document.getElementById('rag-chunk-size').value) || 512,
     chunk_overlap: parseInt(document.getElementById('rag-chunk-overlap').value) || 64,
     top_k: parseInt(document.getElementById('rag-top-k').value) || 5,
-    query_model: document.getElementById('rag-query-model').value || 'qwen2.5:14b',
+    query_model: document.getElementById('rag-query-model').value || 'qwen3:8b',
     embed_models: document.getElementById('rag-embed-models').value.split(',').map(s => s.trim()).filter(Boolean),
     reasoning_enabled: document.getElementById('rag-reasoning').checked,
+    reranker_model: document.getElementById('rag-reranker-model').value || 'bge-reranker-v2-m3',
+    reranker_enabled: document.getElementById('rag-reranker-enabled').checked,
   };
   try {
     const r = await fetch('/' + apiPath('api/config'), {
@@ -619,6 +633,7 @@ async function runRagTest() {
   const query = document.getElementById('rag-test-query').value;
   const topK = parseInt(document.getElementById('rag-test-topk').value) || 5;
   const reasoning = document.getElementById('rag-test-reasoning').checked;
+  const reranker = document.getElementById('rag-test-reranker').checked;
   const responseEl = document.getElementById('rag-test-response');
   const chunksEl = document.getElementById('rag-test-chunks');
   const timingEl = document.getElementById('rag-test-timing');
@@ -630,12 +645,12 @@ async function runRagTest() {
     const r = await fetch('/' + apiPath('api/query'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, top_k: topK, reasoning_enabled: reasoning }),
+      body: JSON.stringify({ query, top_k: topK, reasoning_enabled: reasoning, reranker_enabled: reranker }),
     });
     const ms = Math.round(performance.now() - start);
     const data = await r.json();
     timingEl.textContent = `— ${ms}ms`;
-    responseEl.textContent = JSON.stringify({ answer: data.answer, confidence: data.confidence, reasoning: data.reasoning, top_k: data.top_k, chunks_retrieved: data.chunks_retrieved }, null, 2);
+    responseEl.textContent = JSON.stringify({ answer: data.answer, confidence: data.confidence, reasoning: data.reasoning, top_k: data.top_k, chunks_retrieved: data.chunks_retrieved, reranker_used: data.reranker_used, reranker_model: data.reranker_model }, null, 2);
     chunkCount.textContent = `${data.chunks_retrieved || 0} chunks`;
     if (data.sources && data.sources.length) {
       chunksEl.textContent = 'Sources:\n' + data.sources.map((s, i) => `  ${i+1}. ${s}`).join('\n');

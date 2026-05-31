@@ -10,6 +10,8 @@ pub struct RagConfig {
     pub query_model: String,
     pub reasoning_enabled: bool,
     pub embed_models: Vec<String>,
+    pub reranker_model: String,
+    pub reranker_enabled: bool,
 }
 
 impl Default for RagConfig {
@@ -18,13 +20,15 @@ impl Default for RagConfig {
             chunk_size: 512,
             chunk_overlap: 64,
             top_k: 5,
-            query_model: "qwen2.5:14b".to_string(),
+            query_model: "qwen3:8b".to_string(),
             reasoning_enabled: false,
             embed_models: vec![
                 "nomic-embed-text".to_string(),
-                "phi-4-reasoning-plus-q4_k_m".to_string(),
-                "qwen2.5:14b".to_string(),
+                "deepseek-r1:8b".to_string(),
+                "qwen3:8b".to_string(),
             ],
+            reranker_model: "bge-reranker-v2-m3".to_string(),
+            reranker_enabled: true,
         }
     }
 }

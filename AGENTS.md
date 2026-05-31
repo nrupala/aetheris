@@ -170,6 +170,8 @@ RUST_LOG=debug cargo test
 - **Docker Compose** ✅ — LLMVM profile for agent orchestration
 - **Documentation** ✅ — Restructured to AppDocs format with role-based guides
 - **Help panels** ✅ — All 4 subdomain UIs have comprehensive help panels
+- **Reranker** ✅ — `rerank()` added to `ModelBridge` trait, implemented via Ollama `/api/rerank`, wired into `rag_query_handler` with `RagConfig.reranker_model`/`reranker_enabled`
+- **Model set 2026** ✅ — Updated defaults: `qwen3:8b` (primary), `deepseek-r1:8b` (deep reasoning), `bge-reranker-v2-m3` (reranker), `phi4-mini` (lightweight), `phi4-reasoning` (full reasoning)
 
 ### In Progress
 - **WAL-backed dev logs** — logs endpoint initialized but not dynamically appended
@@ -227,6 +229,7 @@ Aetheris provides a secure, containerized file management system that leverages 
 - **Ollama Integration**: On-device semantic search capabilities powered by Ollama.
 - **Contextual Search**: Advanced search functionality based on file content and metadata.
 - **AI-Powered Indexing**: Intelligent indexing of files with semantic understanding.
+- **Reranker Pipeline**: Cross-encoder reranking via `bge-reranker-v2-m3` for second-pass relevance scoring after vector search.
 
 **Skills for Local AI:**
 - ollama: Ollama API integration, local LLM deployment, model management

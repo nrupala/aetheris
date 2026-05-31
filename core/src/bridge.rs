@@ -23,4 +23,5 @@ pub trait ModelBridge: AetherisBridge {
     async fn embed(&self, content: &str) -> Result<Vec<f32>, String>;
     async fn embed_and_index(&self, content: &str, file_id: &str) -> Result<(), String>;
     async fn list_models(&self) -> Result<Vec<String>, String>;
+    async fn rerank(&self, query: &str, documents: Vec<String>, model: &str) -> Result<Vec<f64>, String>;
 }

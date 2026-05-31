@@ -154,6 +154,10 @@ impl ModelBridge for OpenRouterBridge {
         Err("OpenRouter does not support embeddings".to_string())
     }
 
+    async fn rerank(&self, _query: &str, _documents: Vec<String>, _model: &str) -> Result<Vec<f64>, String> {
+        Err("OpenRouter does not support reranking".to_string())
+    }
+
     async fn list_models(&self) -> Result<Vec<String>, String> {
         let api_key = self.api_key().ok_or_else(|| "OpenRouter not configured".to_string())?;
         let client = reqwest::Client::new();

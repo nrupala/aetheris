@@ -8,7 +8,7 @@ pub struct OllamaBridge {
 
 impl OllamaBridge {
     pub fn new(url: String) -> Self {
-        Self { url, default_model: "qwen2.5:14b".to_string() }
+        Self { url, default_model: "qwen3:8b".to_string() }
     }
 
     #[allow(dead_code)]
@@ -56,7 +56,7 @@ impl OllamaBridge {
 #[async_trait]
 impl ModelBridge for OllamaBridge {
     async fn embed(&self, content: &str) -> Result<Vec<f32>, String> {
-        let models = ["nomic-embed-text", "phi-4-reasoning-plus-q4_k_m", "qwen2.5:14b"];
+        let models = ["nomic-embed-text", "deepseek-r1:8b", "qwen3:8b"];
         let mut last_err = String::new();
         for model in &models {
             match self.embed_with_model(content, model).await {
@@ -74,6 +74,28 @@ impl ModelBridge for OllamaBridge {
         let _embedding = self.embed(content).await?;
         println!("Ollama Bridge: Indexed {} ({} dims)", file_id, _embedding.len());
         Ok(())
+    }
+
+    async fn rerank(&self, query: &str, documents: Vec<String>, model: &str) -> Result<Vec<f64>, String> {
+        if documents.is_empty() {
+            return Ok(vec![]);
+        }
+        let payload = serde_json::json!({
+            "model": model,
+            "query": query,
+            "documents": documents
+        });
+        let res = reqwest::Client::new()
+            .post(format!("{}/api/rerank", self.url))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("Rerank request failed: {}", e))?;
+        let body: serde_json::Value = res.json().await
+            .map_err(|e| format!("Failed to parse rerank response: {}", e))?;
+        body["results"].as_array()
+            .map(|arr| arr.iter().filter_map(|r| r["relevance_score"].as_f64()).collect())
+            .ok_or_else(|| "No results in rerank response".to_string())
     }
 
     async fn list_models(&self) -> Result<Vec<String>, String> {
