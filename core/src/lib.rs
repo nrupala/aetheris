@@ -1,5 +1,15 @@
+pub mod agents;
+pub mod a2a;
+pub mod bridge;
 pub mod config;
 pub mod connector;
+pub mod fusion;
+pub mod guardian;
+pub mod implementation;
+pub mod mcp;
 pub mod metrics;
+pub mod proxy;
+pub mod rag;
+pub mod sync;
 pub mod wal;
 pub mod watcher;

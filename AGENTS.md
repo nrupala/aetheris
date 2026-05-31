@@ -32,14 +32,38 @@ docker compose up -d
 aetheris/
 ├── core/                    # Rust source code
 │   ├── src/
-│   │   ├── main.rs         # Entry point, Axum server
+│   │   ├── main.rs         # Entry point, Axum server (847 lines, 38+ endpoints)
 │   │   ├── lib.rs          # Module exports
-│   │   ├── sync.rs         # Upload/download handlers
-│   │   ├── connector.rs    # AI/OPA integration
-│   │   └── watcher.rs      # Security watcher
+│   │   ├── bridge.rs       # Trait abstractions (AetherisBridge, SecurityBridge, ModelBridge)
+│   │   ├── implementation.rs  # OllamaBridge + OpaBridge implementations
+│   │   ├── sync.rs         # Upload/download handlers (sync_router)
+│   │   ├── proxy.rs        # Reverse proxy to Python orchestrator
+│   │   ├── wal.rs          # Write-ahead log with 9 entry types
+│   │   ├── a2a.rs          # Agent-to-Agent messaging gateway
+│   │   ├── mcp.rs          # MCP protocol with 9 tool definitions
+│   │   └── agents/         # Agent trait, BaseAgent, factory, 4 implementations
+│   │       ├── mod.rs      # Agent/AgentRole/AgentState/AgentResult/BaseAgent
+│   │       ├── planner.rs  # Task decomposition agent
+│   │       ├── researcher.rs  # RAG query agent
+│   │       ├── coder.rs    # Code generation agent
+│   │       └── reviewer.rs # Quality review agent
 │   └── Cargo.toml
-├── compose.yaml             # Docker Compose stack
+├── web/                    # HTML subdomain UIs
+│   ├── ai/index.html       # AI Chat with help panel
+│   ├── agents/index.html   # Agent Dashboard with helps panel
+│   ├── rag/index.html      # RAG Document Q&A with help panel
+│   └── dev/index.html      # Dev Sandbox with help panel
+├── compose.yaml             # Docker Compose stack (+ LLMVM profile)
 ├── Dockerfile.core          # Rust container
+├── docs/                    # Restructured documentation (AppDocs format)
+│   ├── architecture/        # System architecture docs
+│   ├── api-reference/       # API specs
+│   ├── guides/             # User/developer/ops guides
+│   ├── WHAT_NOT_TO_DO.md   # Anti-patterns
+│   ├── COMMANDS.md         # Command reference
+│   ├── INTERFACES.md       # Interface definitions
+│   ├── ROLE_GUIDES.md      # Role-based per-persona docs
+│   └── FAQ.md              # Frequently asked questions
 ├── scripts/                 # Deployment scripts
 │   ├── bootstrap.sh         # System init
 │   ├── verification.sh      # Integrity checks
@@ -130,8 +154,27 @@ RUST_LOG=debug cargo test
 
 ## Getting Help
 - Check `TODO.md` for current status
-- Review `UAT_RESULTS.md` for test coverage
 - See `README.md` for project overview
+- Review `docs/COMMANDS.md` for common command reference
+- Review `docs/FAQ.md` for common questions
+- Review `docs/WHAT_NOT_TO_DO.md` for anti-patterns
+
+## Build Status
+
+### Completed
+- **Core compilation** ✅ — `cargo check` passes with zero errors
+- **`workflow_run_handler` fix** ✅ — `std::sync::MutexGuard` was held across `.await`, making future non-`Send`. Fixed by extracting agent from lock, dropping guard, awaiting, then re-acquiring.
+- **Agent pipeline** ✅ — Planner/Researcher/Coder/Reviewer with A2A messaging, MCP tools
+- **WAL** ✅ — 9 entry types, append/replay/truncate, 11 tests
+- **Bridge traits** ✅ — `ModelBridge`, `SecurityBridge`, `AetherisBridge` with `Send + Sync`
+- **Docker Compose** ✅ — LLMVM profile for agent orchestration
+- **Documentation** ✅ — Restructured to AppDocs format with role-based guides
+- **Help panels** ✅ — All 4 subdomain UIs have comprehensive help panels
+
+### In Progress
+- **WAL-backed dev logs** — logs endpoint initialized but not dynamically appended
+- **Agent state `Waiting`** — defined in enum but never reached in sequential execution
+- **UAT tests** — need Docker deployment to run verification scripts
 
 ## Containerized File Management
 Aetheris provides a secure, containerized file management system that leverages ZFS technology with native encryption. Key features include:

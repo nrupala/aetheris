@@ -10,7 +10,7 @@ COPY requirements.txt /app/
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENV LMSTUDIO_URL=http://host.docker.internal:1234
+ENV OLLAMA_URL=http://ollama:11434
 ENV RAG_PORT=8080
 
 EXPOSE 8080

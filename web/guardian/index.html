@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aetheris Guardian</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e17; color: #e0e0e0; min-height: 100vh; }
+nav { background: #111827; border-bottom: 1px solid #1e293b; padding: 0.75rem 2rem; display: flex; align-items: center; gap: 1rem; }
+nav h1 { color: #60a5fa; font-size: 1.25rem; }
+nav .badge { color: #64748b; font-size: 0.75rem; background: #1e293b; padding: 0.25rem 0.5rem; border-radius: 4px; }
+.tabs { display: flex; gap: 0; margin-left: auto; }
+.tab { padding: 0.5rem 1rem; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; font-size: 0.875rem; }
+.tab:hover { color: #93c5fd; }
+.tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+.container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 2rem; }
+.panel { display: none; }
+.panel.active { display: block; }
+.card { background: #111827; border: 1px solid #1e293b; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+.card h2 { color: #f1f5f9; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.card h2 .sub { color: #64748b; font-size: 0.8rem; font-weight: 400; }
+.status-bar { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.status-item { background: #111827; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 200px; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.healthy { background: #22c55e; box-shadow: 0 0 8px #22c55e66; }
+.status-dot.degraded { background: #f59e0b; box-shadow: 0 0 8px #f59e0b66; }
+.status-dot.down { background: #ef4444; box-shadow: 0 0 8px #ef444466; }
+.service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0.75rem; }
+.service-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1rem; }
+.service-card .name { font-size: 0.85rem; color: #e0e0e0; margin-bottom: 0.25rem; }
+.service-card .meta { font-size: 0.75rem; color: #64748b; }
+.service-card .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.5rem; }
+pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1rem; font-size: 0.8rem; color: #a5b4fc; overflow: auto; max-height: 400px; font-family: 'JetBrains Mono', monospace; }
+.alert-item { padding: 0.75rem; background: #0f172a; border-left: 3px solid #ef4444; border-radius: 0 0.5rem 0.5rem 0; margin-bottom: 0.5rem; }
+.alert-item.warn { border-left-color: #f59e0b; }
+.alert-item .sev { font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
+.alert-item .sev.critical { color: #ef4444; }
+.alert-item .sev.warning { color: #f59e0b; }
+.alert-item .sev.info { color: #3b82f6; }
+.alert-item .msg { font-size: 0.85rem; margin: 0.25rem 0; }
+.alert-item .time { font-size: 0.7rem; color: #64748b; }
+.rec-item { padding: 0.75rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; margin-bottom: 0.5rem; }
+.rec-item .pri { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+.rec-item .pri.high { background: #991b1b33; color: #fca5a5; }
+.rec-item .pri.medium { background: #92400e33; color: #fbbf24; }
+.rec-item .pri.low { background: #1e3a5f33; color: #93c5fd; }
+.rec-item .title { font-size: 0.85rem; color: #e0e0e0; margin: 0.25rem 0; }
+.rec-item .desc { font-size: 0.8rem; color: #94a3b8; }
+.rec-item .action { font-size: 0.75rem; color: #60a5fa; margin-top: 0.25rem; font-family: monospace; }
+.chat-box { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
+.chat-box input { flex: 1; background: #0f172a; border: 1px solid #1e293b; color: #e0e0e0; padding: 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; }
+.chat-box input:focus { outline: none; border-color: #3b82f6; }
+.chat-box button { padding: 0.75rem 1.5rem; background: #2563eb; color: #fff; border: none; border-radius: 0.5rem; cursor: pointer; font-size: 0.875rem; }
+.chat-box button:hover { background: #1d4ed8; }
+.version-item { padding: 0.5rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 0.375rem; margin-bottom: 0.375rem; font-size: 0.8rem; display: flex; justify-content: space-between; }
+.version-item .vid { color: #60a5fa; font-family: monospace; }
+.version-item .vtype { color: #22d3ee; font-size: 0.7rem; }
+@media (max-width: 768px) { .status-bar { flex-direction: column; } .tabs { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<nav>
+  <h1>Aetheris</h1><span class="badge">Guardian</span>
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="chat">Chat</div>
+    <div class="tab" data-tab="alerts">Alerts</div>
+    <div class="tab" data-tab="versions">Chronicle</div>
+  </div>
+</nav>
+<div class="container">
+
+<div class="panel active" id="panel-overview">
+  <div class="status-bar" id="status-bar">
+    <div class="status-item">
+      <span class="status-dot" id="dot-status"></span>
+      <div><div style="font-size:0.85rem;color:#e0e0e0;" id="txt-status">Loading...</div><div style="font-size:0.7rem;color:#64748b;" id="txt-uptime"></div></div>
+    </div>
+    <div class="status-item">
+      <span class="status-dot" id="dot-ai"></span>
+      <div><div style="font-size:0.85rem;color:#e0e0e0;" id="txt-ai">AI</div><div style="font-size:0.7rem;color:#64748b;" id="txt-ai-latency"></div></div>
+    </div>
+    <div class="status-item">
+      <span class="status-dot" id="dot-store"></span>
+      <div><div style="font-size:0.85rem;color:#e0e0e0;" id="txt-store">Vector Store</div><div style="font-size:0.7rem;color:#64748b;" id="txt-store-info"></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Services</h2>
+    <div class="service-grid" id="service-grid"></div>
+  </div>
+  <div class="card">
+    <h2>Active Recommendations</h2>
+    <div id="rec-list"><p style="color:#64748b;font-size:0.85rem;">None yet.</p></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-chat">
+  <div class="card">
+    <h2>Guardian Chat <span class="sub">— ask about health, alerts, recommendations</span></h2>
+    <div class="chat-box">
+      <input id="chat-input" placeholder="e.g. health, alerts, recommendations, memory, latency, security, versions..." onkeydown="if(event.key==='Enter')chat()">
+      <button onclick="chat()">Ask</button>
+    </div>
+    <pre id="chat-response">Ask the Guardian anything about system health, performance, or security.</pre>
+  </div>
+</div>
+
+<div class="panel" id="panel-alerts">
+  <div class="card">
+    <h2>Alerts <span class="sub">— system notifications and issues</span></h2>
+    <div id="alert-list"><p style="color:#64748b;font-size:0.85rem;">Loading...</p></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-versions">
+  <div class="card">
+    <h2>Chronicle <span class="sub">— version snapshots</span></h2>
+    <div id="version-list"><p style="color:#64748b;font-size:0.85rem;">Loading...</p></div>
+  </div>
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'overview') loadHealth();
+    if (t.dataset.tab === 'alerts') loadHealth();
+    if (t.dataset.tab === 'versions') loadVersions();
+  });
+});
+
+async function loadHealth() {
+  try {
+    const r = await fetch('/guardian/health');
+    const data = await r.json();
+
+    const dot = (ok, degraded) => ok ? 'healthy' : degraded ? 'degraded' : 'down';
+
+    document.getElementById('dot-status').className = 'status-dot ' + dot(data.status === 'healthy');
+    document.getElementById('txt-status').textContent = 'System: ' + data.status;
+    document.getElementById('txt-uptime').textContent = 'Uptime: ' + formatUptime(data.uptime_seconds);
+
+    const aiSvc = data.services.find(s => s.name === 'ollama');
+    if (aiSvc) {
+      document.getElementById('dot-ai').className = 'status-dot ' + dot(aiSvc.status === 'connected');
+      document.getElementById('txt-ai').textContent = 'AI: ' + aiSvc.status;
+      document.getElementById('txt-ai-latency').textContent = aiSvc.latency_ms + 'ms latency';
+    }
+
+    const storeSvc = data.services.find(s => s.name === 'vector_store');
+    if (storeSvc) {
+      document.getElementById('dot-store').className = 'status-dot ' + dot(storeSvc.status === 'online');
+      document.getElementById('txt-store').textContent = 'Vector Store: ' + storeSvc.status;
+    }
+
+    const grid = document.getElementById('service-grid');
+    grid.innerHTML = data.services.map(s => `
+      <div class="service-card">
+        <div class="name"><span class="dot ${dot(s.status === 'running' || s.status === 'connected' || s.status === 'online' || s.status === 'active')}"></span>${s.name}</div>
+        <div class="meta">${s.status} · ${s.latency_ms}ms</div>
+      </div>
+    `).join('');
+
+    // Recommendations
+    const recList = document.getElementById('rec-list');
+    if (data.recommendations && data.recommendations.length > 0) {
+      recList.innerHTML = data.recommendations.map(r => `
+        <div class="rec-item">
+          <span class="pri ${r.priority}">${r.priority}</span>
+          <span style="color:#64748b;font-size:0.7rem;margin-left:0.5rem;">${r.category}</span>
+          <div class="title">${r.title}</div>
+          <div class="desc">${r.description}</div>
+          <div class="action">${r.action}</div>
+        </div>
+      `).join('');
+    } else {
+      recList.innerHTML = '<p style="color:#64748b;font-size:0.85rem;">All clear — no recommendations at this time.</p>';
+    }
+
+    // Alerts
+    const alertList = document.getElementById('alert-list');
+    if (data.alerts && data.alerts.length > 0) {
+      alertList.innerHTML = data.alerts.map(a => `
+        <div class="alert-item ${a.severity === 'warning' ? 'warn' : ''}">
+          <div class="sev ${a.severity}">${a.severity}</div>
+          <div class="msg">${a.message}</div>
+          <div class="time">${a.timestamp} · ${a.acknowledged ? 'Acknowledged' : 'Unacknowledged'}</div>
+        </div>
+      `).join('');
+    } else {
+      alertList.innerHTML = '<p style="color:#64748b;font-size:0.85rem;">No active alerts.</p>';
+    }
+  } catch (e) {
+    document.getElementById('txt-status').textContent = 'Error loading health: ' + e.message;
+  }
+}
+
+async function loadVersions() {
+  const list = document.getElementById('version-list');
+  try {
+    const r = await fetch('/guardian/versions');
+    const data = await r.json();
+    const versions = data.versions || [];
+    if (versions.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;font-size:0.85rem;">No Chronicle versions captured yet. Snapshots are created during operations.</p>';
+      return;
+    }
+    list.innerHTML = versions.map(v => `
+      <div class="version-item">
+        <div>
+          <span class="vid">${v.id}</span>
+          <span class="vtype">${v.version_type}</span>
+        </div>
+        <div style="color:#64748b;">${v.summary} · ${(v.compression_ratio || 0).toFixed(1)}x</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;">Error loading versions: ' + e.message + '</p>';
+  }
+}
+
+async function chat() {
+  const query = document.getElementById('chat-input').value.trim();
+  if (!query) return;
+  const resp = document.getElementById('chat-response');
+  resp.textContent = 'Thinking...';
+  try {
+    const r = await fetch('/guardian/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const data = await r.json();
+    resp.textContent = data.answer || data.response || 'No response';
+  } catch (e) {
+    resp.textContent = 'Error: ' + e.message;
+  }
+}
+
+function formatUptime(s) {
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  return d + 'd ' + h + 'h ' + m + 'm ' + s + 's';
+}
+
+loadHealth();
+</script>
+</body>
+</html>

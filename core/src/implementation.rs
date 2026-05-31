@@ -1,11 +1,26 @@
 use async_trait::async_trait;
-use crate::bridge::{AIBridge, SecurityBridge, AetherisBridge};
+use crate::bridge::{ModelBridge, SecurityBridge, AetherisBridge};
 
-pub struct AIBridge { pub url: String }
+pub struct OllamaBridge {
+    pub url: String,
+    pub default_model: String,
+}
+
+impl OllamaBridge {
+    pub fn new(url: String) -> Self {
+        Self { url, default_model: "qwen2.5:14b".to_string() }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_model(url: String, default_model: String) -> Self {
+        Self { url, default_model }
+    }
+}
 
 #[async_trait]
-impl AetherisBridge for AIBridge {
-    fn name(&self) -> &str { "lmstudio" }
+impl AetherisBridge for OllamaBridge {
+    fn name(&self) -> &str { "ollama" }
+
     async fn health_check(&self) -> bool {
         reqwest::Client::new()
             .get(&format!("{}/v1/models", self.url))
@@ -16,27 +31,67 @@ impl AetherisBridge for AIBridge {
     }
 }
 
-#[async_trait]
-impl crate::bridge::ModelBridge for AIBridge {
-    async fn embed_and_index(&self, content: &str, file_id: &str) -> Result<(), String> {
-        println!("AI Bridge: Indexing {} via LMStudio...", file_id);
-        
+impl OllamaBridge {
+    pub async fn embed_with_model(&self, content: &str, model: &str) -> Result<Vec<f32>, String> {
         let payload = serde_json::json!({
-            "model": "text-embedding-nomic-embed-text-v1.5",
-            "input": content
+            "model": model,
+            "prompt": content
         });
-
-        reqwest::Client::new()
-            .post(format!("{}/v1/embeddings", self.url))
+        let res = reqwest::Client::new()
+            .post(format!("{}/api/embeddings", self.url))
             .json(&payload)
             .send()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Embedding request failed for {}: {}", model, e))?;
+        let body: serde_json::Value = res.json().await
+            .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
+        body["embedding"].as_array()
+            .ok_or_else(|| format!("No embedding in response from {}", model))?
+            .iter()
+            .map(|v| v.as_f64().map(|f| f as f32).ok_or_else(|| "Non-float in embedding".to_string()))
+            .collect()
+    }
+}
 
+#[async_trait]
+impl ModelBridge for OllamaBridge {
+    async fn embed(&self, content: &str) -> Result<Vec<f32>, String> {
+        let models = ["nomic-embed-text", "phi-4-reasoning-plus-q4_k_m", "qwen2.5:14b"];
+        let mut last_err = String::new();
+        for model in &models {
+            match self.embed_with_model(content, model).await {
+                Ok(emb) => return Ok(emb),
+                Err(e) => {
+                    last_err = e;
+                    println!("embed model '{}' unavailable, trying next", model);
+                }
+            }
+        }
+        Err(format!("All embed models failed: {}", last_err))
+    }
+
+    async fn embed_and_index(&self, content: &str, file_id: &str) -> Result<(), String> {
+        let _embedding = self.embed(content).await?;
+        println!("Ollama Bridge: Indexed {} ({} dims)", file_id, _embedding.len());
         Ok(())
     }
 
+    async fn list_models(&self) -> Result<Vec<String>, String> {
+        let res = reqwest::Client::new()
+            .get(format!("{}/v1/models", self.url))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to list models: {}", e))?;
+        let body: serde_json::Value = res.json().await
+            .map_err(|e| format!("Failed to parse models response: {}", e))?;
+        let models = body["data"].as_array()
+            .map(|arr| arr.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        Ok(models)
+    }
+
     async fn query(&self, prompt: &str, model: &str) -> Result<String, String> {
+        let model = if model.is_empty() { &self.default_model } else { model };
         let payload = serde_json::json!({
             "model": model,
             "messages": [{
@@ -46,17 +101,14 @@ impl crate::bridge::ModelBridge for AIBridge {
             "temperature": 0.1,
             "stream": false
         });
-
         let res = reqwest::Client::new()
             .post(format!("{}/v1/chat/completions", self.url))
             .json(&payload)
             .send()
             .await
             .map_err(|e| format!("AI request failed: {}", e))?;
-
         let body: serde_json::Value = res.json().await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
-
         let msg = &body["choices"][0]["message"];
         msg["content"].as_str().filter(|s| !s.is_empty())
             .or_else(|| msg["reasoning_content"].as_str().filter(|s| !s.is_empty()))
@@ -67,9 +119,16 @@ impl crate::bridge::ModelBridge for AIBridge {
 
 pub struct OpaBridge { pub url: String }
 
+impl OpaBridge {
+    pub fn new(url: String) -> Self {
+        Self { url }
+    }
+}
+
 #[async_trait]
 impl AetherisBridge for OpaBridge {
     fn name(&self) -> &str { "opa" }
+
     async fn health_check(&self) -> bool {
         reqwest::Client::new()
             .get(&format!("{}/health", self.url))
@@ -84,18 +143,22 @@ impl AetherisBridge for OpaBridge {
 impl SecurityBridge for OpaBridge {
     async fn authorize(&self, peer_id: &str, action: &str) -> bool {
         let payload = serde_json::json!({
-            "input": {
-                "peer_id": peer_id,
-                "action": action
-            }
+            "input": { "peer_id": peer_id, "action": action }
         });
-
-        reqwest::Client::new()
+        let client = reqwest::Client::new();
+        let res = client
             .post(&format!("{}/v1/data/aetheris/authz/allow", self.url))
             .json(&payload)
             .send()
-            .await
-            .map(|r| r.json::<serde_json::Value>().await.map(|v| v.get("result").is_some()).unwrap_or(false))
-            .unwrap_or(false)
+            .await;
+        match res {
+            Ok(r) => {
+                if let Ok(body) = r.json::<serde_json::Value>().await {
+                    return body.get("result").is_some();
+                }
+                false
+            }
+            Err(_) => false,
+        }
     }
 }

@@ -1,11 +1,13 @@
 use serde_json::json;
 
+#[allow(dead_code)]
 pub struct AetherisConnector {
     pub ai_url: String,
     pub opa_url: String,
     pub vault_path: String,
 }
 
+#[allow(dead_code)]
 impl AetherisConnector {
     pub async fn authorize(&self, peer_id: &str, action: &str) -> bool {
         let client = reqwest::Client::new();
@@ -39,7 +41,7 @@ impl AetherisConnector {
     }
 
     pub async fn ai_query(&self, prompt: &str, model: Option<&str>) -> Result<String, String> {
-        let model = model.unwrap_or("microsoft/phi-4-reasoning-plus");
+        let model = model.unwrap_or("qwen2.5:14b");
         let client = reqwest::Client::new();
         let payload = json!({
             "model": model,
@@ -183,12 +185,12 @@ mod tests {
     #[test]
     fn test_ai_query_payload_with_default_model() {
         let payload = json!({
-            "model": "microsoft/phi-4-reasoning-plus",
+            "model": "qwen2.5:14b",
             "messages": [{"role": "user", "content": "test prompt"}],
             "temperature": 0.1,
             "stream": false
         });
-        assert_eq!(payload["model"], "microsoft/phi-4-reasoning-plus");
+        assert_eq!(payload["model"], "qwen2.5:14b");
         assert_eq!(payload["temperature"], 0.1);
         assert_eq!(payload["stream"], false);
     }
@@ -276,14 +278,14 @@ mod tests {
     #[test]
     fn test_default_model_fallback() {
         let model: Option<&str> = None;
-        let resolved = model.unwrap_or("microsoft/phi-4-reasoning-plus");
-        assert_eq!(resolved, "microsoft/phi-4-reasoning-plus");
+        let resolved = model.unwrap_or("qwen2.5:14b");
+        assert_eq!(resolved, "qwen2.5:14b");
     }
 
     #[test]
     fn test_custom_model_override() {
         let model: Option<&str> = Some("custom-model");
-        let resolved = model.unwrap_or("microsoft/phi-4-reasoning-plus");
+        let resolved = model.unwrap_or("qwen2.5:14b");
         assert_eq!(resolved, "custom-model");
     }
 }

@@ -3,8 +3,8 @@ import json
 import sys
 import os
 
-AETHERIS_AI = os.environ.get("AI_ENDPOINT", "http://host.docker.internal:1234")
-DEFAULT_MODEL = os.environ.get("AI_MODEL", "microsoft/phi-4-reasoning-plus")
+AETHERIS_AI = os.environ.get("AI_ENDPOINT", "http://ollama:11434")
+DEFAULT_MODEL = os.environ.get("AI_MODEL", "qwen2.5:14b")
 VAULT_PATH = os.environ.get("VAULT_PATH", "/data/vault")
 AUDIT_LOG = os.path.join(VAULT_PATH, "audit.log")
 

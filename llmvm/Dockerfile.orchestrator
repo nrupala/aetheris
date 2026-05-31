@@ -14,7 +14,7 @@ COPY agent_orchestrator/ ./agent_orchestrator/
 RUN mkdir -p /workspace/intermediate /workspace/orchestrator_state /workspace/data
 
 ENV WORKSPACE_ROOT=/workspace
-ENV LMSTUDIO_ENDPOINT=http://host.docker.internal:1234
+ENV OLLAMA_ENDPOINT=http://ollama:11434
 ENV OPA_ENDPOINT=http://opa-gateway:8181
 
 EXPOSE 9090

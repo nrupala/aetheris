@@ -148,22 +148,126 @@
     <div class="help-overlay" id="help-overlay" onclick="if(event.target===this)toggleHelp()">
         <div class="help-panel">
             <button class="close-btn" onclick="toggleHelp()">&times;</button>
-            <h2>Aetheris Agent Orchestrator</h2>
+            <h2>Aetheris Agent Orchestrator — Documentation</h2>
+
             <h3>Overview</h3>
-            <p>Multi-agent system with MCP server, A2A protocol, and cross-engine orchestration. Agents collaborate through a planner-coordinated workflow with OPA-gated access to RAG, KG, and file systems.</p>
+            <p>Multi-agent orchestration system with MCP (Model Context Protocol) server, A2A (Agent-to-Agent) protocol, and cross-engine orchestration. Agents collaborate through a planner-coordinated workflow with OPA-gated access to RAG, KG, and file systems.</p>
+
+            <h3>Access</h3>
+            <ul>
+                <li><strong>URL:</strong> <code>https://agents.nrupalakolkar.com</code></li>
+                <li><strong>Auth:</strong> HTTP Basic Auth — credentials required</li>
+                <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
+            </ul>
+
+            <h3>Architecture</h3>
+            <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy)
+  → Rust Core (:8080) — Agent orchestrator, MCP, A2A, workflow engine
+    → Python Orchestrator (:9090) — Cross-engine state (optional)
+      → Ollama (:11434) — LLM inference for all agents</code></pre>
+
             <h3>Agent Roles</h3>
             <ul>
-                <li><strong>Researcher</strong> — Queries RAG with reasoning loop, extracts entities to KG</li>
-                <li><strong>Coder</strong> — Uses RAG context + KG for code generation</li>
-                <li><strong>Reviewer</strong> — Evaluates against KG history + RAG standards</li>
-                <li><strong>Planner</strong> — Decomposes tasks, coordinates multi-agent workflows</li>
+                <li><strong>Planner</strong> — Decomposes complex tasks into sub-tasks, coordinates multi-agent workflow execution, assigns work to Researcher → Coder → Reviewer pipeline</li>
+                <li><strong>Researcher</strong> — Queries RAG with iterative reasoning loop, extracts entities to Knowledge Graph, validates sources</li>
+                <li><strong>Coder</strong> — Uses RAG context + KG relationships for code generation, applies project conventions</li>
+                <li><strong>Reviewer</strong> — Evaluates outputs against KG history + RAG standards, validates quality and compliance</li>
             </ul>
-            <h3>API</h3>
-            <pre><code>POST /workflow/run     — Run multi-agent workflow
-POST /task/submit      — Submit single-agent task
-GET  /agents/status    — Agent status
-GET  /orchestrator/state  — Cross-engine state
-GET  /orchestrator/forecast — Resource forecast</code></pre>
+
+            <h3>Workflow Pipeline</h3>
+            <p>The standard execution flow is: <code>Planner → Researcher → Coder → Reviewer</code></p>
+            <p>Each agent executes sequentially, passing context forward. The Planner decomposes the task, the Researcher gathers information, the Coder produces output, and the Reviewer validates it.</p>
+
+            <h3>Tabs</h3>
+            <ul>
+                <li><strong>Dashboard</strong> — Summary stats (agents, tasks, memory forecast, cross-system health) and active task list</li>
+                <li><strong>Workflow</strong> — Run multi-agent workflows with task input and execution progress</li>
+                <li><strong>Agents</strong> — Detailed agent pool view with role, model, state (idle/executing/failed), tasks completed, policy compliance</li>
+                <li><strong>Cross-System</strong> — Cross-engine state showing connected engines, resource spread forecast, and recommendations</li>
+                <li><strong>MCP Tools</strong> — Model Context Protocol tools available for agent use</li>
+                <li><strong>A2A Log</strong> — Agent-to-Agent message log with flow, type, approval status, and timestamps</li>
+            </ul>
+
+            <h3>Agent Lifecycle</h3>
+            <ul>
+                <li><strong>Idle</strong> — Agent is initialized and waiting for a task assignment</li>
+                <li><strong>Executing</strong> — Agent is actively processing a task (calling LLM, querying RAG, writing code)</li>
+                <li><strong>Complete</strong> — Agent finished the task successfully; result is passed to the next agent in the pipeline</li>
+                <li><strong>Failed</strong> — Agent encountered an error; task is marked with error details</li>
+            </ul>
+
+            <h3>API Reference</h3>
+            <p>All endpoints accessible at <code>https://agents.nrupalakolkar.com/</code></p>
+
+            <h4><span class="method-get">GET</span> <code>/api/agents/status</code></h4>
+            <p>Status of each agent in the pool: role, model, state, tasks completed, policy checks allowed/total.</p>
+            <pre><code>curl -u user:pass https://agents.nrupalakolkar.com/api/agents/status</code></pre>
+
+            <h4><span class="method-post">POST</span> <code>/api/workflow/run</code></h4>
+            <p>Run a multi-agent workflow with optional reasoning and max iterations.</p>
+            <pre><code>curl -u user:pass https://agents.nrupalakolkar.com/api/workflow/run \
+  -H "Content-Type: application/json" \
+  -d '{"task": "Refactor the auth module", "max_iterations": 3, "use_reasoning": true}'</code></pre>
+
+            <h4><span class="method-post">POST</span> <code>/api/task/submit</code></h4>
+            <p>Submit a single-agent task for a specific role.</p>
+            <pre><code>curl -u user:pass https://agents.nrupalakolkar.com/api/task/submit \
+  -H "Content-Type: application/json" \
+  -d '{"role": "researcher", "task": "Find documentation about ZFS encryption"}'</code></pre>
+
+            <h4><span class="method-get">GET</span> <code>/api/mcp/tools</code></h4>
+            <p>List all MCP tools with names, descriptions, and tags.</p>
+
+            <h4><span class="method-get">GET</span> <code>/api/a2a/messages</code></h4>
+            <p>Retrieve recent A2A messages showing inter-agent communication flow.</p>
+
+            <h4><span class="method-get">GET</span> <code>/api/orchestrator/state</code></h4>
+            <p>Cross-engine orchestration state: connected engines, response times, active tasks, memory usage, queue depth.</p>
+
+            <h4><span class="method-get">GET</span> <code>/api/orchestrator/forecast</code></h4>
+            <p>Resource spread forecast: predicted memory, host utilization, confidence score, bottleneck analysis, recommendations.</p>
+
+            <h4><span class="method-get">GET</span> <code>/api/health</code></h4>
+            <p>Overall health: agent count, task count, tools, prompts, cross-system status, spread forecast.</p>
+
+            <h3>MCP (Model Context Protocol)</h3>
+            <p>MCP provides a standardized interface for agents to interact with tools and external systems. The MCP server exposes tools that agents can discover and invoke dynamically.</p>
+            <p>Available tool categories include file operations, RAG queries, knowledge graph access, code evaluation, and system commands — all gated through OPA policy checks.</p>
+
+            <h3>A2A (Agent-to-Agent)</h3>
+            <p>A2A messaging enables direct communication between agents for coordination, handoff, and result sharing. Messages flow through a channel-based gateway with approval tracking.</p>
+            <p>Each A2A message includes: source agent, target agent, message type, payload, approval status, and timestamp.</p>
+
+            <h3>Policy Enforcement</h3>
+            <p>All agent actions are gated through an OPA (Open Policy Agent) policy check. The BaseAgent base class evaluates every tool call against configured policies before execution. Policy stats show allowed vs. total checks per agent.</p>
+
+            <h3>Tips</h3>
+            <ul>
+                <li><strong>Start simple:</strong> Use the Workflow tab to run a complete Planner→Researcher→Coder→Reviewer pipeline</li>
+                <li><strong>Monitor agents:</strong> The Agents tab shows real-time state transitions</li>
+                <li><strong>Cross-system view:</strong> Use the Cross-System tab to see connected engines and resource forecasts</li>
+                <li><strong>MCP discovery:</strong> Browse available tools in the MCP Tools tab before crafting prompts</li>
+                <li><strong>A2A debugging:</strong> Check the A2A Log to trace inter-agent communication issues</li>
+                <li><strong>Resource planning:</strong> Review the memory forecast before running large workflows</li>
+            </ul>
+
+            <h3>Related Services</h3>
+            <ul>
+                <li><strong>AI:</strong> <code>https://ai.nrupalakolkar.com</code> — Direct LLM chat interface</li>
+                <li><strong>RAG:</strong> <code>https://rag.nrupalakolkar.com</code> — Document Q&A with retrieval</li>
+                <li><strong>Dev:</strong> <code>https://dev.nrupalakolkar.com</code> — API Console, logs, config, metrics</li>
+            </ul>
+
+            <h3>Infrastructure</h3>
+            <ul>
+                <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
+                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
+                <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+                <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
+                <li><strong>AI Runtime:</strong> Ollama API server on port 11434 (single model: qwen2.5:14b)</li>
+                <li><strong>Cross-Engine:</strong> Python FastAPI + Uvicorn on port 9090 (optional)</li>
+                <li><strong>Navigation:</strong> Cloudflare Tunnel's browser-based rendering enables subdomain routing</li>
+            </ul>
         </div>
     </div>
 
@@ -201,23 +305,34 @@ GET  /orchestrator/forecast — Resource forecast</code></pre>
                 const [healthR, tasksR] = await Promise.all([fetch('/health'), fetch('/tasks?limit=5')]);
                 const health = await healthR.json();
                 const tasks = await tasksR.json();
-                
-                document.getElementById('dashboard-stats').innerHTML = `
-                    <div class="card"><h3>Agents</h3><div class="value" style="color:var(--purple)">${health.agents}</div><div class="sub">${health.tools} tools • ${health.prompts} prompts</div></div>
+
+                const allIdle = health.agents > 0 && health.tasks === 0;
+
+                document.getElementById('dashboard-stats').innerHTML = allIdle ? `
+                    <div class="empty-state" style="grid-column:1/-1;">
+                        <div class="icon">💤</div>
+                        <p style="font-size:20px;font-weight:600;margin-bottom:8px">System Idle</p>
+                        <p style="color:var(--muted);margin-bottom:20px">${health.agents} agent(s) ready &mdash; run a workflow to get started</p>
+                        <button class="help-btn" style="font-size:14px;padding:8px 20px;cursor:pointer;background:var(--purple);color:white;border:none;border-radius:8px;" onclick="document.querySelector('[data-tab=\\'workflow\\']').click()">Go to Workflow</button>
+                    </div>
+                ` : `
+                    <div class="card"><h3>Agents</h3><div class="value" style="color:var(--purple)">${health.agents}</div><div class="sub">${health.tools} tools</div></div>
                     <div class="card"><h3>Tasks</h3><div class="value" style="color:var(--accent)">${health.tasks}</div><div class="sub">Recent activity</div></div>
-                    <div class="card"><h3>Memory Forecast</h3><div class="value" style="color:var(--orange)">${health.spread_forecast?.total_memory_mb || 0}MB</div><div class="sub">Confidence: ${(health.spread_forecast?.confidence || 0) * 100}%</div></div>
-                    <div class="card"><h3>Cross-System</h3><div class="value" style="color:var(--green)">${health.cross_system ? 'Active' : 'Offline'}</div><div class="sub">Bottleneck: ${health.spread_forecast?.bottleneck || 'none'}</div></div>
+                    <div class="card"><h3>Memory Forecast</h3><div class="value" style="color:var(--orange)">${health.spread_forecast?.total_memory_mb || 0}MB</div><div class="sub">Confidence: ${((health.spread_forecast?.confidence || 0) * 100).toFixed(0)}%</div></div>
+                    <div class="card"><h3>Cross-System</h3><div class="value" style="color:${health.cross_system ? 'var(--green)' : 'var(--muted)'}">${health.cross_system ? 'Active' : 'Standalone'}</div><div class="sub">Bottleneck: ${health.spread_forecast?.bottleneck || 'none'}</div></div>
                 `;
-                
+
                 const taskList = document.getElementById('task-list');
-                if (!tasks.length) {
+                if (allIdle) {
+                    taskList.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No active tasks. The system is idle.</p></div>';
+                } else if (!tasks.length) {
                     taskList.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No tasks yet. Use the Workflow tab to start.</p></div>';
                 } else {
                     taskList.innerHTML = tasks.map(t => `
                         <div class="task-item">
-                            <div class="task-id">${t.task_id}</div>
-                            <div class="task-desc">${t.task}</div>
-                            <div class="task-meta">${t.role} • ${t.agent_id} • ${t.status} • ${t.created_at}</div>
+                            <div class="task-id">${t.task_id || ''}</div>
+                            <div class="task-desc">${t.task || ''}</div>
+                            <div class="task-meta">${[t.role, t.agent_id, t.status, t.created_at].filter(Boolean).join(' • ')}</div>
                         </div>
                     `).join('');
                 }
@@ -289,38 +404,45 @@ GET  /orchestrator/forecast — Resource forecast</code></pre>
                     fetch('/orchestrator/state'),
                     fetch('/orchestrator/forecast'),
                 ]);
-                const state = await stateR.json();
+                const stateData = await stateR.json();
                 const forecast = await forecastR.json();
-                
-                document.getElementById('engine-list').innerHTML = Object.entries(state.engines || {}).map(([name, eng]) => `
-                    <div class="engine-row">
-                        <div>
-                            <div class="engine-name">${name.toUpperCase()}</div>
-                            <div style="font-size:11px;color:var(--muted)">${eng.response_time_ms}ms • ${eng.active_tasks} tasks</div>
-                        </div>
-                        <div>
-                            <span class="engine-status ${eng.status}">${eng.status}</span>
-                            <div style="font-size:11px;color:var(--muted);margin-top:4px">Mem: ${eng.memory_mb}MB • Queue: ${eng.queue_depth}</div>
-                        </div>
-                    </div>
-                `).join('');
-                
+
+                const engines = stateData.engines || {};
+                const engineNames = Object.keys(engines);
+                document.getElementById('engine-list').innerHTML = engineNames.length
+                    ? engineNames.map(name => {
+                        const eng = engines[name];
+                        const status = eng.status || 'unknown';
+                        return `
+                        <div class="engine-row">
+                            <div>
+                                <div class="engine-name">${name.toUpperCase()}</div>
+                                <div style="font-size:11px;color:var(--muted)">${eng.response_time_ms || 0}ms • ${eng.active_tasks || 0} tasks</div>
+                            </div>
+                            <div>
+                                <span class="engine-status ${status}">${status}</span>
+                                <div style="font-size:11px;color:var(--muted);margin-top:4px">Mem: ${eng.memory_mb || 0}MB • Queue: ${eng.queue_depth || 0}</div>
+                            </div>
+                        </div>`;
+                    }).join('')
+                    : '<div class="empty-state"><div class="icon">⚙</div><p>No engines connected</p></div>';
+
                 document.getElementById('forecast-details').innerHTML = `
                     <div class="card">
                         <h3>Resource Spread</h3>
-                        <div style="display:flex;gap:20px;align-items:center">
+                        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
                             <div><div style="font-size:24px;font-weight:700;color:var(--orange)">${forecast.forecast?.total_memory_mb || 0}MB</div><div style="font-size:11px;color:var(--muted)">Predicted Memory</div></div>
                             <div><div style="font-size:24px;font-weight:700;color:var(--accent)">${forecast.forecast?.memory_utilization_pct || 0}%</div><div style="font-size:11px;color:var(--muted)">Host Utilization</div></div>
-                            <div><div style="font-size:24px;font-weight:700;color:var(--purple)">${forecast.forecast?.confidence || 0}</div><div style="font-size:11px;color:var(--muted)">Confidence</div></div>
+                            <div><div style="font-size:24px;font-weight:700;color:var(--purple)">${((forecast.forecast?.confidence || 0) * 100).toFixed(0)}%</div><div style="font-size:11px;color:var(--muted)">Confidence</div></div>
                         </div>
-                        <div class="progress-bar"><div class="progress-fill" style="width:${forecast.forecast?.memory_utilization_pct || 0}%;background:${(forecast.forecast?.memory_utilization_pct || 0) > 80 ? 'var(--red)' : (forecast.forecast?.memory_utilization_pct || 0) > 60 ? 'var(--orange)' : 'var(--green)'}"></div></div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(forecast.forecast?.memory_utilization_pct || 0, 100)}%;background:${(forecast.forecast?.memory_utilization_pct || 0) > 80 ? 'var(--red)' : (forecast.forecast?.memory_utilization_pct || 0) > 60 ? 'var(--orange)' : 'var(--green)'}"></div></div>
                     </div>
                 `;
-                
+
                 const recs = forecast.recommendations || [];
                 document.getElementById('recommendations').innerHTML = recs.length
                     ? recs.map(r => `<div class="recommendation">${r}</div>`).join('')
-                    : '<p style="color:var(--muted)">No recommendations — all systems nominal</p>';
+                    : '<p style="color:var(--muted)">No recommendations — all agents idle</p>';
             } catch {}
         }
 
@@ -340,18 +462,29 @@ GET  /orchestrator/forecast — Resource forecast</code></pre>
 
         async function loadA2A() {
             try {
-                const r = await fetch('/a2a/messages');
-                const data = await r.json();
-                document.getElementById('a2a-messages').innerHTML = data.messages.length
-                    ? data.messages.map(m => `
+                const [msgR, agentR] = await Promise.all([fetch('/a2a/messages'), fetch('/agents/status')]);
+                const msgData = await msgR.json();
+                const agentData = await agentR.json();
+
+                const agentNames = (agentData.agents || []).map(a => a.role);
+                const msgs = msgData.messages || [];
+
+                let html = '<div style="margin-bottom:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)">';
+                html += '<strong style="color:var(--accent)">Available agents:</strong> ' + (agentNames.length ? agentNames.join(', ') : 'none');
+                html += ' &mdash; A2A messages are generated when agents pass tasks between each other during workflow runs.</div>';
+
+                html += msgs.length
+                    ? msgs.map(m => `
                         <div class="a2a-msg">
-                            <span class="flow">${m.from_agent}</span> → <span class="flow">${m.to_agent}</span>
-                            <span class="type">${m.message_type}</span>
-                            <span style="color:var(--muted);margin-left:8px">${new Date(m.timestamp * 1000).toLocaleTimeString()}</span>
-                            ${m.approved ? '<span style="color:var(--green);margin-left:8px">✓ approved</span>' : '<span style="color:var(--red);margin-left:8px">✗ denied</span>'}
+                            <span class="flow">${m.from_agent || '?'}</span> → <span class="flow">${m.to_agent || '?'}</span>
+                            <span class="type">${m.message_type || '?'}</span>
+                            <span style="color:var(--muted);margin-left:8px">${m.timestamp ? new Date(m.timestamp * 1000).toLocaleTimeString() : ''}</span>
+                            ${m.approved ? '<span style="color:var(--green);margin-left:8px">✓ approved</span>' : '<span style="color:var(--muted);margin-left:8px">pending</span>'}
                         </div>
                     `).join('')
-                    : '<div class="empty-state"><div class="icon">📨</div><p>No A2A messages yet. Run a workflow to generate traffic.</p></div>';
+                    : '<div class="empty-state"><div class="icon">📨</div><p>No A2A messages yet. Run a workflow to see inter-agent communication.</p></div>';
+
+                document.getElementById('a2a-messages').innerHTML = html;
             } catch {}
         }
     </script>

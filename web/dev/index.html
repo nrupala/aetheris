@@ -72,6 +72,26 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
 .service-item .name { font-size: 0.85rem; color: #e0e0e0; flex: 1; }
 .service-item .port { font-size: 0.75rem; color: #64748b; }
 
+/* Help Panel */
+.help-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+.help-overlay.active { display: flex; }
+.help-panel { background: #161b22; border: 1px solid #30363d; border-radius: 12px; max-width: 800px; max-height: 85vh; width: 90%; overflow-y: auto; padding: 32px; position: relative; }
+.help-panel h2 { color: #60a5fa; margin-bottom: 16px; font-size: 20px; }
+.help-panel h3 { color: #e6edf3; margin: 20px 0 8px; font-size: 15px; border-bottom: 1px solid #30363d; padding-bottom: 6px; }
+.help-panel h4 { color: #8b949e; margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; }
+.help-panel p, .help-panel li { color: #e6edf3; line-height: 1.6; font-size: 14px; }
+.help-panel ul { padding-left: 20px; margin: 8px 0; }
+.help-panel code { background: #0d1117; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #58a6ff; }
+.help-panel pre { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 14px; overflow-x: auto; margin: 8px 0; }
+.help-panel pre code { background: none; padding: 0; }
+.help-panel .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; color: #8b949e; font-size: 24px; cursor: pointer; }
+.help-panel .close-btn:hover { color: #e6edf3; }
+.help-panel .endpoint { font-family: monospace; font-size: 13px; }
+.help-panel .method-get { color: #3fb950; }
+.help-panel .method-post { color: #58a6ff; }
+.help-panel .method-delete { color: #f85149; }
+.help-panel .badge { display: inline-block; background: #1f6feb22; color: #58a6ff; border: 1px solid #1f6feb44; border-radius: 4px; padding: 2px 8px; font-size: 11px; margin-right: 4px; }
+
 @media (max-width: 768px) { .row { grid-template-columns: 1fr; } .tabs { margin-left: 0; width: 100%; } }
 </style>
 </head>
@@ -80,10 +100,11 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
   <h1>Aetheris</h1><span class="badge">Dev Sandbox</span>
   <div class="tabs">
     <div class="tab active" data-tab="console">API Console</div>
-    <div class="tab" data-tab="logs">System Logs</div>
-    <div class="tab" data-tab="config">Config</div>
-    <div class="tab" data-tab="metrics">Metrics</div>
+    <div class="tab" data-tab="rag-config">RAG Config</div>
+    <div class="tab" data-tab="rag-test">RAG Test</div>
+    <div class="tab" data-tab="system">System</div>
   </div>
+  <button onclick="toggleHelp()" style="background:#0f172a;color:#93c5fd;border:1px solid #1e293b;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap">Help</button>
 </nav>
 
 <div class="container">
@@ -111,12 +132,16 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
         </optgroup>
         <optgroup label="RAG">
           <option value="api/query">POST /api/query</option>
+          <option value="api/config">GET /api/config</option>
+          <option value="api/config">PUT /api/config</option>
           <option value="api/sources">GET /api/sources</option>
           <option value="api/stats">GET /api/stats</option>
+          <option value="api/ingest/file">POST /api/ingest/file</option>
+          <option value="api/v1/models">GET /api/v1/models</option>
+          <option value="api/bridge/ai/embed">POST /api/bridge/ai/embed</option>
           <option value="api/knowledge-graph/stats">GET /api/knowledge-graph/stats</option>
           <option value="api/knowledge-graph/entities">GET /api/knowledge-graph/entities</option>
           <option value="api/knowledge-graph/relations">GET /api/knowledge-graph/relations</option>
-          <option value="api/coordinator/circuits">GET /api/coordinator/circuits</option>
         </optgroup>
         <optgroup label="AI">
           <option value="api/v1/models">GET /api/v1/models</option>
@@ -142,47 +167,222 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
   </div>
 </div>
 
-<!-- SYSTEM LOGS -->
-<div class="panel" id="panel-logs">
+<!-- RAG CONFIG -->
+<div class="panel" id="panel-rag-config">
   <div class="card">
-    <h2>System Logs</h2>
+    <h2>RAG Configuration <span class="sub">— load, edit, and save</span></h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+      <div>
+        <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Chunk Size</label>
+        <input id="rag-chunk-size" type="number" value="512" style="width:100%;">
+      </div>
+      <div>
+        <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Chunk Overlap</label>
+        <input id="rag-chunk-overlap" type="number" value="64" style="width:100%;">
+      </div>
+      <div>
+        <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Top K Results</label>
+        <input id="rag-top-k" type="number" value="5" min="1" max="50" style="width:100%;">
+      </div>
+      <div>
+        <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Query Model</label>
+        <input id="rag-query-model" type="text" value="qwen2.5:14b" style="width:100%;font-family:monospace;">
+      </div>
+      <div style="grid-column:1/-1;">
+        <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Embedding Models (ordered fallback, comma-separated)</label>
+        <input id="rag-embed-models" type="text" value="nomic-embed-text, phi-4-reasoning-plus-q4_k_m, qwen2.5:14b" style="width:100%;font-family:monospace;">
+      </div>
+      <div style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:center;">
+        <label style="color:#94a3b8;font-size:0.8rem;display:flex;align-items:center;gap:0.5rem;">
+          <input id="rag-reasoning" type="checkbox"> Enable Reasoning
+        </label>
+      </div>
+    </div>
+    <div class="btn-group" style="margin-top:1rem;">
+      <button class="btn btn-primary" onclick="loadRagConfig()">Load Current</button>
+      <button class="btn btn-success" onclick="saveRagConfig()">Save Config</button>
+      <span id="rag-config-status" style="font-size:0.8rem;color:#64748b;margin-left:0.5rem;"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Ingest Test <span class="sub">— upload a file with current config</span></h2>
     <div class="controls">
-      <button class="btn btn-primary btn-sm" onclick="fetchLogs()">Refresh</button>
-      <span id="log-count" style="font-size:0.8rem;color:#64748b;"></span>
+      <input type="file" id="ingest-file" style="flex:1;">
+      <button class="btn btn-primary" onclick="ingestFile()">Ingest</button>
     </div>
-    <div id="log-container" style="max-height:600px;overflow-y:auto;">
-      <div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">Click Refresh to load logs.</span></div>
-    </div>
+    <pre id="ingest-result" style="margin-top:0.5rem;max-height:200px;">Ready.</pre>
   </div>
 </div>
 
-<!-- CONFIG -->
-<div class="panel" id="panel-config">
+<!-- RAG TEST -->
+<div class="panel" id="panel-rag-test">
   <div class="card">
-    <h2>Configuration Files <span class="sub">— /etc/aetheris/</span></h2>
+    <h2>Interactive Query <span class="sub">— test with different params</span></h2>
     <div class="controls">
-      <button class="btn btn-primary btn-sm" onclick="fetchConfig()">Refresh</button>
-      <span id="config-count" style="font-size:0.8rem;color:#64748b;"></span>
+      <input id="rag-test-query" type="text" placeholder="Enter your question..." style="flex:1;">
+      <label>Top K</label>
+      <input id="rag-test-topk" type="number" value="5" min="1" max="50" style="width:70px;">
+      <label style="display:flex;align-items:center;gap:0.25rem;">
+        <input id="rag-test-reasoning" type="checkbox"> Reasoning
+      </label>
+      <button class="btn btn-primary" onclick="runRagTest()">Query</button>
     </div>
-    <div id="config-container"></div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h2>Response <span id="rag-test-timing" class="sub"></span></h2>
+        <pre id="rag-test-response" style="max-height:400px;">Run a query to see results.</pre>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h2>Retrieved Chunks <span id="rag-test-chunk-count" class="sub"></span></h2>
+        <pre id="rag-test-chunks" style="max-height:400px;">Chunks will appear here.</pre>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Embedding Test <span class="sub">— try a model</span></h2>
+    <div class="controls">
+      <input id="embed-test-text" type="text" placeholder="Text to embed..." style="flex:1;">
+      <button class="btn btn-secondary" onclick="testEmbedding('nomic-embed-text')">nomic-embed-text</button>
+      <button class="btn btn-secondary" onclick="testEmbedding('phi-4-reasoning-plus-q4_k_m')">Phi-4-Reasoning</button>
+      <button class="btn btn-secondary" onclick="testEmbedding('qwen2.5:14b')">qwen2.5:14b</button>
+    </div>
+    <pre id="embed-test-result" style="margin-top:0.5rem;max-height:150px;">Click a model to test embedding.</pre>
   </div>
 </div>
 
-<!-- METRICS -->
-<div class="panel" id="panel-metrics">
+<!-- SYSTEM -->
+<div class="panel" id="panel-system">
   <div class="card">
-    <h2>Services</h2>
-    <div id="service-list" class="service-list"></div>
+    <h2>Services & Health</h2>
+    <div class="controls"><button class="btn btn-primary btn-sm" onclick="fetchSystemHealth()">Refresh</button></div>
+    <div id="system-health-grid" class="metric-grid"></div>
+    <div id="system-service-list" class="service-list" style="margin-top:1rem;"></div>
   </div>
   <div class="card">
-    <h2>System</h2>
-    <div class="metric-grid" id="system-metrics"></div>
+    <h2>Available Models</h2>
+    <div id="model-list" style="display:flex;flex-wrap:wrap;gap:0.5rem;">Loading...</div>
+  </div>
+  <div class="card">
+    <h2>RAG Statistics</h2>
+    <div class="metric-grid" id="rag-stats-grid"></div>
   </div>
 </div>
 
+</div>
+
+<!-- Help Panel -->
+<div class="help-overlay" id="help-overlay" onclick="if(event.target===this)toggleHelp()">
+  <div class="help-panel">
+    <button class="close-btn" onclick="toggleHelp()">&times;</button>
+    <h2>Aetheris Dev Sandbox — Documentation</h2>
+
+    <h3>Overview</h3>
+    <p>The Dev Sandbox provides a browser-based interface for exploring and testing all Aetheris API endpoints. It includes an API Console, live System Logs, configuration viewer, and service metrics dashboard.</p>
+
+    <h3>Access</h3>
+    <ul>
+      <li><strong>URL:</strong> <code>https://dev.nrupalakolkar.com</code></li>
+      <li><strong>Auth:</strong> HTTP Basic Auth — <code>dev_user</code> / <code>BCjfTYIIjMASFGVM</code></li>
+      <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
+    </ul>
+
+    <h3>Tabs</h3>
+    <ul>
+      <li><strong>API Console</strong> — Execute requests against any Aetheris endpoint with method/body control</li>
+      <li><strong>System Logs</strong> — View live WAL-backed audit trail of all operations</li>
+      <li><strong>Config</strong> — View runtime configuration files from <code>/etc/aetheris/</code></li>
+      <li><strong>Metrics</strong> — Service health dashboard with uptime, containers, and status monitoring</li>
+    </ul>
+
+    <h3>API Reference</h3>
+    <p>All endpoints are accessible at <code>https://dev.nrupalakolkar.com/</code></p>
+
+    <h4><span class="method-get">GET</span> <code>/api/health</code></h4>
+    <p>Overall system health including agent count, task count, tools, prompts, and cross-system status.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/status</code></h4>
+    <p>Detailed status of all services: WAL, knowledge graph, connect policy, OPA, and model endpoints.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/agents/status</code></h4>
+    <p>Status of each agent in the pool: role, model, state (idle/executing/failed), tasks completed, policy checks.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/orchestrator/state</code></h4>
+    <p>Cross-engine orchestration state showing all connected engines with memory, queue depth, and response times.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/orchestrator/forecast</code></h4>
+    <p>Resource spread forecast with predicted memory usage, host utilization, bottleneck analysis, and recommendations.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/mcp/tools</code></h4>
+    <p>List all available MCP (Model Context Protocol) tools with names, descriptions, and tags.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/a2a/messages</code></h4>
+    <p>Agent-to-Agent (A2A) message log showing inter-agent communication flow, approval status, and timestamps.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/tasks</code></h4>
+    <p>Recent tasks with IDs, descriptions, roles, agent IDs, status, and timestamps.</p>
+
+    <h4><span class="method-post">POST</span> <code>/api/query</code></h4>
+    <p>Ask a question against indexed documents using RAG. Supports reasoning mode and confidence thresholds.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/sources</code></h4>
+    <p>List all indexed RAG documents with chunk counts and last-seen timestamps.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/stats</code></h4>
+    <p>RAG knowledge base statistics: total chunks, sources, and database size.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/knowledge-graph/stats</code></h4>
+    <p>Knowledge graph statistics: entities, relations, interactions, and decisions.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/knowledge-graph/entities</code></h4>
+    <p>List knowledge graph entities with type and importance scores, filterable by entity type.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/knowledge-graph/relations</code></h4>
+    <p>List knowledge graph relationships showing entity-to-entity connections.</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/coordinator/circuits</code></h4>
+    <p>Circuit breaker states for each engine: closed (healthy), open (tripped), or half-open (recovering).</p>
+
+    <h4><span class="method-get">GET</span> <code>/api/v1/models</code></h4>
+    <p>List available AI models from Ollama with IDs and metadata.</p>
+
+    <h3>Architecture</h3>
+    <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy)
+  → Rust Core (:8080) — API gateway, agents, file ops
+    → Python Orchestrator (:9090) — RAG, KG, cross-system features (optional)
+      → Ollama (:11434) — Local LLM inference</code></pre>
+
+    <h3>Related Services</h3>
+    <ul>
+      <li><strong>AI:</strong> <code>https://ai.nrupalakolkar.com</code> — Direct LLM chat</li>
+      <li><strong>Agents:</strong> <code>https://agents.nrupalakolkar.com</code> — Agent Orchestrator Dashboard</li>
+      <li><strong>RAG:</strong> <code>https://rag.nrupalakolkar.com</code> — Document Q&A with retrieval</li>
+    </ul>
+
+    <h3>Infrastructure</h3>
+    <ul>
+      <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
+      <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
+      <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+      <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
+      <li><strong>Orchestrator:</strong> Python FastAPI + Uvicorn on port 9090</li>
+      <li><strong>AI Runtime:</strong> Ollama API server on port 11434</li>
+    </ul>
+  </div>
 </div>
 
 <script>
+// Strip /api/ prefix when running locally (no nginx rewrite available)
+function apiPath(path) {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocal && path.startsWith('api/')) return path.substring(4);
+  if (!isLocal && !path.startsWith('api/') && path !== 'v1/models') return 'api/' + path;
+  return path;
+}
+
 // Tab switching
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
@@ -190,11 +390,14 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('panel-' + t.dataset.tab).classList.add('active');
-    if (t.dataset.tab === 'logs') fetchLogs();
-    if (t.dataset.tab === 'config') fetchConfig();
-    if (t.dataset.tab === 'metrics') fetchMetrics();
+    if (t.dataset.tab === 'rag-config') loadRagConfig();
+    if (t.dataset.tab === 'system') { fetchSystemHealth(); fetchModels(); fetchRagStats(); }
   });
 });
+
+function toggleHelp() {
+  document.getElementById('help-overlay').classList.toggle('active');
+}
 
 // Show/hide request body for POST endpoints
 document.getElementById('api-endpoint').addEventListener('change', function() {
@@ -211,7 +414,7 @@ document.getElementById('api-method').addEventListener('change', function() {
 });
 
 async function executeApiCall() {
-  const endpoint = document.getElementById('api-endpoint').value;
+  let endpoint = document.getElementById('api-endpoint').value;
   const method = document.getElementById('api-method').value;
   const body = document.getElementById('api-body').value;
   const statusEl = document.getElementById('api-status');
@@ -222,7 +425,7 @@ async function executeApiCall() {
   latencyEl.textContent = '';
   respEl.textContent = '';
 
-  const url = '/' + endpoint;
+  const url = '/' + apiPath(endpoint);
   const opts = { method, headers: { 'Accept': 'application/json' } };
   if (method === 'POST') {
     opts.headers['Content-Type'] = 'application/json';
@@ -259,7 +462,7 @@ async function fetchLogs() {
   const count = document.getElementById('log-count');
   container.innerHTML = '<div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">Loading...</span></div>';
   try {
-    const r = await fetch('/api/dev/logs');
+    const r = await fetch('/' + apiPath('api/dev/logs'));
     const data = await r.json();
     const logs = data.logs || [];
     count.textContent = `${logs.length} entries`;
@@ -285,7 +488,7 @@ async function fetchConfig() {
   const count = document.getElementById('config-count');
   container.innerHTML = '<p style="color:#64748b;">Loading...</p>';
   try {
-    const r = await fetch('/api/dev/config');
+    const r = await fetch('/' + apiPath('api/dev/config'));
     const data = await r.json();
     const files = Object.keys(data);
     count.textContent = `${files.length} files`;
@@ -309,7 +512,7 @@ async function fetchMetrics() {
   const serviceList = document.getElementById('service-list');
   const sysMetrics = document.getElementById('system-metrics');
   try {
-    const r = await fetch('/api/dev/metrics');
+    const r = await fetch('/' + apiPath('api/dev/metrics'));
     const data = await r.json();
 
     // Services
@@ -343,10 +546,186 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// RAG CONFIG
+async function loadRagConfig() {
+  const status = document.getElementById('rag-config-status');
+  status.textContent = 'Loading...';
+  try {
+    const r = await fetch('/' + apiPath('api/config'));
+    const cfg = await r.json();
+    document.getElementById('rag-chunk-size').value = cfg.chunk_size || 512;
+    document.getElementById('rag-chunk-overlap').value = cfg.chunk_overlap || 64;
+    document.getElementById('rag-top-k').value = cfg.top_k || 5;
+    document.getElementById('rag-query-model').value = cfg.query_model || 'qwen2.5:14b';
+    document.getElementById('rag-embed-models').value = (cfg.embed_models || ['nomic-embed-text', 'phi-4-reasoning-plus-q4_k_m', 'qwen2.5:14b']).join(', ');
+    document.getElementById('rag-reasoning').checked = cfg.reasoning_enabled || false;
+    status.textContent = 'Loaded';
+    status.style.color = '#22c55e';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = '#ef4444';
+  }
+}
+
+async function saveRagConfig() {
+  const status = document.getElementById('rag-config-status');
+  status.textContent = 'Saving...';
+  const payload = {
+    chunk_size: parseInt(document.getElementById('rag-chunk-size').value) || 512,
+    chunk_overlap: parseInt(document.getElementById('rag-chunk-overlap').value) || 64,
+    top_k: parseInt(document.getElementById('rag-top-k').value) || 5,
+    query_model: document.getElementById('rag-query-model').value || 'qwen2.5:14b',
+    embed_models: document.getElementById('rag-embed-models').value.split(',').map(s => s.trim()).filter(Boolean),
+    reasoning_enabled: document.getElementById('rag-reasoning').checked,
+  };
+  try {
+    const r = await fetch('/' + apiPath('api/config'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const res = await r.json();
+    if (r.ok) {
+      status.textContent = 'Saved ✓ — ' + JSON.stringify(res.config).substring(0, 80) + '...';
+      status.style.color = '#22c55e';
+    } else {
+      status.textContent = 'Error: ' + (res.error || r.statusText);
+      status.style.color = '#ef4444';
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = '#ef4444';
+  }
+}
+
+async function ingestFile() {
+  const fileInput = document.getElementById('ingest-file');
+  const result = document.getElementById('ingest-result');
+  if (!fileInput.files.length) { result.textContent = 'Please select a file first.'; return; }
+  result.textContent = 'Uploading...';
+  const form = new FormData();
+  form.append('file', fileInput.files[0]);
+  try {
+    const r = await fetch('/' + apiPath('api/ingest/file'), { method: 'POST', body: form });
+    const data = await r.json();
+    result.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    result.textContent = 'Error: ' + e.message;
+  }
+}
+
+// RAG TEST
+async function runRagTest() {
+  const query = document.getElementById('rag-test-query').value;
+  const topK = parseInt(document.getElementById('rag-test-topk').value) || 5;
+  const reasoning = document.getElementById('rag-test-reasoning').checked;
+  const responseEl = document.getElementById('rag-test-response');
+  const chunksEl = document.getElementById('rag-test-chunks');
+  const timingEl = document.getElementById('rag-test-timing');
+  const chunkCount = document.getElementById('rag-test-chunk-count');
+  if (!query) { responseEl.textContent = 'Enter a query first.'; return; }
+  responseEl.textContent = 'Querying...';
+  const start = performance.now();
+  try {
+    const r = await fetch('/' + apiPath('api/query'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, top_k: topK, reasoning_enabled: reasoning }),
+    });
+    const ms = Math.round(performance.now() - start);
+    const data = await r.json();
+    timingEl.textContent = `— ${ms}ms`;
+    responseEl.textContent = JSON.stringify({ answer: data.answer, confidence: data.confidence, reasoning: data.reasoning, top_k: data.top_k, chunks_retrieved: data.chunks_retrieved }, null, 2);
+    chunkCount.textContent = `${data.chunks_retrieved || 0} chunks`;
+    if (data.sources && data.sources.length) {
+      chunksEl.textContent = 'Sources:\n' + data.sources.map((s, i) => `  ${i+1}. ${s}`).join('\n');
+    } else {
+      chunksEl.textContent = 'No chunks retrieved (no context).';
+    }
+  } catch (e) {
+    responseEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function testEmbedding(model) {
+  const text = document.getElementById('embed-test-text').value;
+  const result = document.getElementById('embed-test-result');
+  if (!text) { result.textContent = 'Enter text to embed first.'; return; }
+  result.textContent = `Embedding with ${model}...`;
+  try {
+    const r = await fetch('/' + apiPath('api/bridge/ai/embed'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text, model }),
+    });
+    const data = await r.json();
+    const dims = data.embedding ? data.embedding.length : '?';
+    const preview = data.embedding ? '[' + data.embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ') + ', ... ]' : '[]';
+    result.textContent = `Model: ${model}\nDimensions: ${dims}\nPreview: ${preview}`;
+  } catch (e) {
+    result.textContent = `Error with ${model}: ` + e.message;
+  }
+}
+
+// SYSTEM
+async function fetchSystemHealth() {
+  const healthGrid = document.getElementById('system-health-grid');
+  const serviceList = document.getElementById('system-service-list');
+  try {
+    const r = await fetch('/' + apiPath('api/health'));
+    const h = await r.json();
+    healthGrid.innerHTML = `
+      <div class="metric-card"><div class="metric-value" style="color:${h.status === 'healthy' ? '#22c55e' : '#ef4444'}">${h.status || '?'}</div><div class="metric-label">System Status</div></div>
+      <div class="metric-card"><div class="metric-value">${h.agents || 0}</div><div class="metric-label">Agents</div></div>
+      <div class="metric-card"><div class="metric-value">${h.tasks || 0}</div><div class="metric-label">Tasks</div></div>
+      <div class="metric-card"><div class="metric-value">${h.tools || 0}</div><div class="metric-label">MCP Tools</div></div>
+    `;
+    const services = h.services || [];
+    serviceList.innerHTML = services.length
+      ? services.map(s => `<div class="service-item"><span class="dot ${s.status === 'up' ? 'up' : 'down'}"></span><span class="name">${escapeHtml(s.name)}</span><span class="port">${s.status}</span></div>`).join('')
+      : '<p style="color:#64748b;">No service data.</p>';
+  } catch (e) {
+    healthGrid.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
+  }
+}
+
+async function fetchModels() {
+  const container = document.getElementById('model-list');
+  try {
+    const r = await fetch('/' + apiPath('api/v1/models'));
+    const data = await r.json();
+    const models = data.models || data.data || [];
+    if (!models.length) { container.innerHTML = '<span style="color:#64748b;">No models available.</span>'; return; }
+    container.innerHTML = models.map(m => {
+      const name = m.name || m.id || m.model || '?';
+      return `<span style="background:#0f172a;border:1px solid #1e293b;border-radius:4px;padding:0.3rem 0.6rem;font-size:0.8rem;color:#93c5fd;font-family:monospace;">${escapeHtml(name)}</span>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<span style="color:#ef4444;">Error: ${e.message}</span>`;
+  }
+}
+
+async function fetchRagStats() {
+  const grid = document.getElementById('rag-stats-grid');
+  try {
+    const r = await fetch('/' + apiPath('api/stats'));
+    const s = await r.json();
+    grid.innerHTML = `
+      <div class="metric-card"><div class="metric-value">${s.total_sources || 0}</div><div class="metric-label">Sources</div></div>
+      <div class="metric-card"><div class="metric-value">${s.total_chunks || 0}</div><div class="metric-label">Chunks</div></div>
+      <div class="metric-card"><div class="metric-value">${s.embedding_dimension || 0}</div><div class="metric-label">Embed Dims</div></div>
+      <div class="metric-card"><div class="metric-value">${s.db_size_mb ? s.db_size_mb.toFixed(1) : 0} MB</div><div class="metric-label">DB Size</div></div>
+    `;
+  } catch (e) {
+    grid.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
+  }
+}
+
 // Load data on initial page load
-fetchLogs();
-fetchConfig();
-fetchMetrics();
+loadRagConfig();
+fetchSystemHealth();
+fetchModels();
+fetchRagStats();
 </script>
 </body>
 </html>

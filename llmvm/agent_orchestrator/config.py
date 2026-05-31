@@ -16,8 +16,8 @@ class OrchestratorConfig:
     port: int = 9090
     
     # Model routing
-    lmstudio_endpoint: str = os.environ.get("LMSTUDIO_ENDPOINT", "http://localhost:1234")
-    default_model: str = os.environ.get("DEFAULT_MODEL", "strand-rust-coder-14b-v1")
+    ai_endpoint: str = os.environ.get("AI_ENDPOINT", "http://ollama:11434")
+    default_model: str = os.environ.get("DEFAULT_MODEL", "qwen2.5:14b")
     fallback_model: str = os.environ.get("FALLBACK_MODEL", "ibm/granite-4-h-tiny")
     
     # A2A Protocol
@@ -45,10 +45,10 @@ class OrchestratorConfig:
     
     # Model assignments per role
     role_models: dict = field(default_factory=lambda: {
-        "researcher": "strand-rust-coder-14b-v1",
-        "coder": "strand-rust-coder-14b-v1",
-        "reviewer": "microsoft/phi-4-reasoning-plus",
-        "planner": "microsoft/phi-4-reasoning-plus",
+        "researcher": "qwen2.5:14b",
+        "coder": "qwen2.5:14b",
+        "reviewer": "qwen2.5:14b",
+        "planner": "qwen2.5:14b",
     })
     
     # System prompts per role

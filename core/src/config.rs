@@ -13,7 +13,7 @@ impl Config {
         Self {
             vault_path: Self::path_from_env("VAULT_PATH", "vault"),
             ai_endpoint: std::env::var("AI_ENDPOINT")
-                .unwrap_or_else(|_| "http://host.docker.internal:1234".to_string()),
+                .unwrap_or_else(|_| "http://localhost:11434".to_string()),
             opa_endpoint: std::env::var("OPA_ENDPOINT")
                 .unwrap_or_else(|_| "http://opa:8181".to_string()),
             port: std::env::var("PORT")
@@ -48,7 +48,7 @@ mod tests {
     fn test_default_config_has_sensible_defaults() {
         let config = Config::new();
         assert_eq!(config.port, 8080);
-        assert_eq!(config.ai_endpoint, "http://host.docker.internal:1234");
+        assert_eq!(config.ai_endpoint, "http://localhost:11434");
         assert_eq!(config.opa_endpoint, "http://opa:8181");
         assert!(!config.vault_path.to_string_lossy().starts_with('/'));
         assert!(!config.vault_path.to_string_lossy().starts_with("C:\\"));

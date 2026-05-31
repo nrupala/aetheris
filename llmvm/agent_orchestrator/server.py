@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent_orchestrator.config import config
 from agent_orchestrator.mcp import MCPServer, register_default_tools, register_default_prompts
 from agent_orchestrator.agents import create_agent, BaseAgent, AgentResult, OPAPolicyGate
+from rag_core.model_router import create_default_router
 from agent_orchestrator.a2a_gateway import A2AGateway, A2AMessage
 from agent_orchestrator.cross_system import (
     CrossEngineState, EngineType, ResourceForecaster,
@@ -96,6 +97,10 @@ class KGWriteRequest(BaseModel):
 async def startup():
     global cross_orchestrator, rag_client, kg_client
     
+    # Create model router for LLM calls
+    ai_endpoint = os.environ.get("AI_ENDPOINT", config.ai_endpoint)
+    router = create_default_router(ollama_endpoint=ai_endpoint)
+    
     rag_client = RAGClient(endpoint=os.environ.get("RAG_ENDPOINT", "http://rag-service:8080"))
     kg_client = KGClient(endpoint=os.environ.get("RAG_ENDPOINT", "http://rag-service:8080"))
     
@@ -117,7 +122,7 @@ async def startup():
     for role in config.agent_roles:
         model = config.role_models.get(role, config.default_model)
         prompt = config.role_prompts.get(role, f"You are a {role} agent.")
-        agent = create_agent(role, model, prompt, opa_gate)
+        agent = create_agent(role, model, prompt, opa_gate, router=router)
         agents[agent.id] = agent
         logger.info(f"Created agent: {agent.id} ({role}) using model {model}")
     

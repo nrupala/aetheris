@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aetheris — API Keys</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e17; color: #e0e0e0; min-height: 100vh; }
+nav { background: #111827; border-bottom: 1px solid #1e293b; padding: 0.75rem 2rem; display: flex; align-items: center; gap: 1rem; }
+nav h1 { color: #60a5fa; font-size: 1.25rem; }
+nav .badge { color: #64748b; font-size: 0.75rem; background: #1e293b; padding: 0.25rem 0.5rem; border-radius: 4px; }
+.container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+.card { background: #111827; border: 1px solid #1e293b; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+.card h2 { color: #f1f5f9; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.card h2 .sub { color: #64748b; font-size: 0.8rem; font-weight: 400; }
+input, select { background: #0f172a; border: 1px solid #1e293b; color: #e0e0e0; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; font-family: inherit; width: 100%; }
+input:focus { outline: none; border-color: #3b82f6; }
+.btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-family: inherit; }
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-danger { background: #991b1b; color: #fca5a5; }
+.btn-success { background: #065f46; color: #6ee7b7; }
+.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; color: #94a3b8; font-size: 0.8rem; margin-bottom: 0.25rem; }
+.form-row { display: flex; gap: 0.75rem; align-items: flex-end; }
+.form-row .form-group { flex: 1; margin-bottom: 0; }
+.key-list { margin-top: 1rem; }
+.key-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; margin-bottom: 0.5rem; }
+.key-item .status { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.key-item .status.enabled { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
+.key-item .status.disabled { background: #64748b; }
+.key-item .info { flex: 1; }
+.key-item .info .name { font-size: 0.85rem; color: #e0e0e0; }
+.key-item .info .detail { font-size: 0.75rem; color: #64748b; }
+.key-item .actions { display: flex; gap: 0.5rem; }
+pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1rem; font-size: 0.8rem; color: #a5b4fc; overflow: auto; max-height: 200px; }
+.toast { position: fixed; bottom: 2rem; right: 2rem; background: #065f46; color: #6ee7b7; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-size: 0.875rem; display: none; z-index: 100; }
+.toast.error { background: #991b1b; color: #fca5a5; }
+.preset-list { display: grid; gap: 0.5rem; margin-bottom: 1rem; }
+.preset-btn { background: #0f172a; border: 1px solid #1e293b; color: #93c5fd; padding: 0.5rem 0.75rem; border-radius: 0.375rem; cursor: pointer; font-size: 0.8rem; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+.preset-btn:hover { border-color: #2563eb; }
+.preset-btn .desc { color: #64748b; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<nav>
+  <h1>Aetheris</h1><span class="badge">Settings</span>
+</nav>
+<div class="container">
+  <div class="card">
+    <h2>API Keys <span class="sub">— service credentials for external integrations</span></h2>
+
+    <h3 style="color:#94a3b8;font-size:0.85rem;margin-bottom:0.75rem;">Quick-add presets</h3>
+    <div class="preset-list">
+      <button class="preset-btn" onclick="preset('openrouter','OpenRouter AI')">
+        <span>OpenRouter <span class="desc">— LLM API for model fallback</span></span>
+        <span style="color:#60a5fa;">+</span>
+      </button>
+      <button class="preset-btn" onclick="preset('exasearch','ExaSearch')">
+        <span>ExaSearch <span class="desc">— Web search for agent context retrieval</span></span>
+        <span style="color:#60a5fa;">+</span>
+      </button>
+      <button class="preset-btn" onclick="preset('github','GitHub PAT')">
+        <span>GitHub <span class="desc">— Personal Access Token for code operations</span></span>
+        <span style="color:#60a5fa;">+</span>
+      </button>
+    </div>
+
+    <div id="custom-add" style="display:none;">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Service Name</label>
+          <input id="new-service" placeholder="e.g. openai">
+        </div>
+        <div class="form-group" style="flex:2;">
+          <label>API Key</label>
+          <input id="new-key" type="password" placeholder="sk-...">
+        </div>
+        <div class="form-group">
+          <label>Label</label>
+          <input id="new-label" placeholder="My Key">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:0.75rem;">
+        <button class="btn btn-success btn-sm" onclick="saveKey()">Save Key</button>
+        <button class="btn btn-sm" style="background:#1e293b;color:#93c5fd;" onclick="cancelAdd()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="key-list" id="key-list">
+      <p style="color:#64748b;font-size:0.85rem;">Loading...</p>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+async function loadKeys() {
+  try {
+    const r = await fetch('/keys');
+    const keys = await r.json();
+    const container = document.getElementById('key-list');
+    if (keys.length === 0) {
+      container.innerHTML = '<p style="color:#64748b;font-size:0.85rem;">No API keys configured. Use the presets above to add one.</p>';
+      return;
+    }
+    container.innerHTML = keys.map(k => `
+      <div class="key-item">
+        <span class="status ${k.enabled ? 'enabled' : 'disabled'}"></span>
+        <div class="info">
+          <div class="name">${escapeHtml(k.label)} <span style="color:#64748b;font-size:0.75rem;">(${escapeHtml(k.service)})</span></div>
+          <div class="detail">${escapeHtml(k.key)} · ${k.configured_at || ''}</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm ${k.enabled ? 'btn-sm' : 'btn-success'}" onclick="toggleKey('${k.service}', ${!k.enabled})">
+            ${k.enabled ? 'Disable' : 'Enable'}
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.service}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('key-list').innerHTML = '<p style="color:#ef4444;">Error loading keys</p>';
+  }
+}
+
+async function saveKey() {
+  const service = document.getElementById('new-service').value.trim();
+  const key = document.getElementById('new-key').value.trim();
+  const label = document.getElementById('new-label').value.trim() || service;
+  if (!service || !key) { toast('Service name and key required', true); return; }
+  try {
+    const r = await fetch('/keys/' + encodeURIComponent(service), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, label }),
+    });
+    if (r.ok) {
+      toast('Key saved');
+      cancelAdd();
+      loadKeys();
+    } else {
+      const err = await r.text();
+      toast('Error: ' + err, true);
+    }
+  } catch (e) {
+    toast('Error saving key', true);
+  }
+}
+
+async function toggleKey(service, enabled) {
+  try {
+    await fetch('/keys/' + encodeURIComponent(service) + '/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    loadKeys();
+  } catch (e) {
+    toast('Error toggling key', true);
+  }
+}
+
+async function deleteKey(service) {
+  if (!confirm('Delete key for ' + service + '?')) return;
+  try {
+    await fetch('/keys/' + encodeURIComponent(service), { method: 'DELETE' });
+    toast('Key deleted');
+    loadKeys();
+  } catch (e) {
+    toast('Error deleting key', true);
+  }
+}
+
+function preset(service, label) {
+  document.getElementById('custom-add').style.display = 'block';
+  document.getElementById('new-service').value = service;
+  document.getElementById('new-label').value = label;
+  document.getElementById('new-key').focus();
+}
+
+function cancelAdd() {
+  document.getElementById('custom-add').style.display = 'none';
+  document.getElementById('new-service').value = '';
+  document.getElementById('new-key').value = '';
+  document.getElementById('new-label').value = '';
+}
+
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (isError ? ' error' : '');
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+loadKeys();
+</script>
+</body>
+</html>

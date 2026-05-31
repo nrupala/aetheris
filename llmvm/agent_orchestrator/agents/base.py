@@ -16,10 +16,12 @@ import uuid
 import json
 import logging
 import os
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from rag_core.model_router import ModelRouter
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +105,15 @@ class OPAPolicyGate:
 
 
 class BaseAgent(ABC):
-    """Abstract base for all agents with OPA gate + RAG + KG."""
+    """Abstract base for all agents with OPA gate + RAG + KG + LLM."""
 
-    def __init__(self, role: str, model: str, system_prompt: str, opa_gate: Optional[OPAPolicyGate] = None):
+    def __init__(self, role: str, model: str, system_prompt: str, opa_gate: Optional[OPAPolicyGate] = None, router: Optional[ModelRouter] = None):
         self.id = f"{role}_{uuid.uuid4().hex[:8]}"
         self.role = role
         self.model = model
         self.system_prompt = system_prompt
         self.opa_gate = opa_gate or OPAPolicyGate()
+        self.router = router
         self.state = AgentState.IDLE
         self.task_history: List[Dict] = []
         self._policies_checked = 0
@@ -125,7 +128,23 @@ class BaseAgent(ABC):
         if allowed:
             self._policies_allowed += 1
         return allowed
-    
+
+    async def _call_llm(self, messages: List[Dict[str, str]], temperature: float = 0.1, max_tokens: int = 4096) -> str:
+        """Call LLM via ModelRouter. Falls back to stub if no router."""
+        if self.router:
+            try:
+                resp = await asyncio.to_thread(
+                    self.router.chat,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return resp.text
+            except Exception as e:
+                logger.error(f"LLM call failed for {self.role}/{self.model}: {e}")
+                return f"# Error: LLM call failed — {e}"
+        return f"# Note: LLM router not configured — agent {self.id} needs a ModelRouter"
+
     async def get_kg_context(self, kg_client, query: str) -> str:
         if not kg_client:
             return ""
@@ -208,6 +227,21 @@ class ResearcherAgent(BaseAgent):
                 sources_used.extend(rag_result.sources)
                 if hasattr(rag_result, 'reasoning_trace') and rag_result.reasoning_trace:
                     reasoning_traces = rag_result.reasoning_trace
+            else:
+                # Fall back to direct LLM call when RAG unavailable
+                research_prompt = f"""Research the following topic thoroughly:
+
+Task: {task}
+
+KG Context: {kg_context[:1000] if kg_context else 'none'}
+
+Provide findings with key insights, sources, and analysis."""
+                llm_result = await self._call_llm([
+                    {"role": "system", "content": "You are a research agent. Gather information and synthesize findings."},
+                    {"role": "user", "content": research_prompt}
+                ])
+                findings.append(llm_result)
+                sources_used.append("direct_llm")
             
             # Step 3: Extract new entities from findings
             kg_stats = {}
@@ -293,9 +327,10 @@ Provide a complete, working implementation. Include:
 2. Error handling
 3. Usage examples"""
             
-            # In production: call LLM here
-            # For now: generate structured output
-            code_output = self._generate_code_structure(task, workspace, code_context)
+            code_output = await self._call_llm([
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ])
             
             # Step 4: Write to workspace if path specified
             output_path = context.get("output_path")
@@ -328,22 +363,6 @@ Provide a complete, working implementation. Include:
                 error=str(e), duration_ms=(time.time()-start)*1000, success=False,
             )
     
-    def _generate_code_structure(self, task: str, workspace: str, context: str) -> str:
-        """Generate code structure placeholder (LLM integration point)."""
-        return f"""# Implementation: {task}
-# Workspace: {workspace}
-# Context: {context[:200] if context else 'none'}
-# Note: LLM integration required for full code generation
-
-def main():
-    \"\"\"Generated implementation for: {task}\"\"\"
-    pass
-
-if __name__ == "__main__":
-    main()
-"""
-
-
 class ReviewerAgent(BaseAgent):
     """Review agent — evaluates against KG history + RAG standards."""
 
@@ -377,8 +396,27 @@ class ReviewerAgent(BaseAgent):
                 kg_context = self.get_kg_context(kg, task)
                 kg_history = kg_context[:500] if kg_context else ""
             
-            # Step 3: Evaluate content
-            review = self._evaluate_content(content, criteria, standards_context, kg_history)
+            # Step 3: Evaluate content via LLM
+            review_prompt = f"""Evaluate the following content against these criteria: {criteria}
+
+Content:
+{content}
+
+Best practices context:
+{standards_context}
+
+Past decisions (KG history):
+{kg_history}
+
+Provide a structured review as JSON with fields: score (1-10), criteria_scores (object), strengths (list), issues (list), suggestions (list), verdict ("approve"/"comment"/"request_changes"/"reject")."""
+            review_result = await self._call_llm([
+                {"role": "system", "content": "You are a code review agent. Evaluate content for correctness, quality, and security."},
+                {"role": "user", "content": review_prompt}
+            ])
+            try:
+                review = json.loads(review_result)
+            except json.JSONDecodeError:
+                review = {"score": 5, "criteria_scores": {}, "strengths": [], "issues": ["Could not parse structured review"], "suggestions": [], "verdict": "pending", "raw_review": review_result}
             
             duration_ms = (time.time() - start) * 1000
             
@@ -398,8 +436,8 @@ class ReviewerAgent(BaseAgent):
                 error=str(e), duration_ms=(time.time()-start)*1000, success=False,
             )
     
-    def _evaluate_content(self, content: str, criteria: List[str], standards: str, kg_history: str) -> Dict:
-        """Evaluate content against criteria."""
+    def _evaluate_content_fallback(self, content: str, criteria: List[str], standards: str, kg_history: str) -> Dict:
+        """Fallback evaluation when LLM is unavailable."""
         review = {
             "score": 0,
             "criteria_scores": {},
@@ -458,7 +496,7 @@ class ReviewerAgent(BaseAgent):
 
 
 class PlannerAgent(BaseAgent):
-    """Planning agent — decomposes tasks, coordinates multi-agent workflows."""
+    """Planning agent — decomposes tasks, coordinates multi-agent workflows via LLM."""
 
     async def execute(self, task: str, context: Dict) -> AgentResult:
         start = time.time()
@@ -478,8 +516,27 @@ class PlannerAgent(BaseAgent):
             # Step 1: Get KG context for similar past tasks
             kg_context = self.get_kg_context(kg, task)
             
-            # Step 2: Decompose task into steps
-            plan = self._decompose_task(task, available_agents, kg_context)
+            # Step 2: Decompose task into steps via LLM
+            plan_prompt = f"""Decompose this task into steps and assign each to the most appropriate agent.
+
+Task: {task}
+Available agents: {available_agents}
+Knowledge Graph context: {kg_context}
+
+Return a JSON plan with: original_task, steps (array with id, description, agent, depends_on, estimated_ms), total_steps."""
+            plan_result = await self._call_llm([
+                {"role": "system", "content": "You are a planning agent. Break down complex tasks into actionable steps with agent assignments."},
+                {"role": "user", "content": plan_prompt}
+            ])
+            try:
+                plan = json.loads(plan_result)
+            except json.JSONDecodeError:
+                plan = {"original_task": task, "steps": [], "kg_context_used": bool(kg_context), "error": "Parse failed", "raw_plan": plan_result}
+            if "original_task" not in plan:
+                plan["original_task"] = task
+            if "steps" not in plan:
+                plan["steps"] = [{"id": 1, "description": f"Process: {task}", "agent": available_agents[0] if available_agents else "researcher", "depends_on": [], "estimated_ms": 30000}]
+            plan["kg_context_used"] = bool(kg_context)
             
             duration_ms = (time.time() - start) * 1000
             
@@ -499,15 +556,13 @@ class PlannerAgent(BaseAgent):
                 error=str(e), duration_ms=(time.time()-start)*1000, success=False,
             )
     
-    def _decompose_task(self, task: str, available_agents: List[str], kg_context: str) -> Dict:
-        """Decompose a task into steps with agent assignments."""
+    def _decompose_task_fallback(self, task: str, available_agents: List[str], kg_context: str) -> Dict:
+        """Fallback plan decomposition when LLM is unavailable."""
         task_lower = task.lower()
         
-        # Heuristic task decomposition
         steps = []
         step_id = 0
         
-        # Research phase
         if any(kw in task_lower for kw in ["how", "what", "explain", "research", "find", "analyze"]):
             step_id += 1
             steps.append({
@@ -518,7 +573,6 @@ class PlannerAgent(BaseAgent):
                 "estimated_ms": 30000,
             })
         
-        # Coding phase
         if any(kw in task_lower for kw in ["code", "implement", "write", "create", "build", "script"]):
             step_id += 1
             steps.append({
@@ -529,7 +583,6 @@ class PlannerAgent(BaseAgent):
                 "estimated_ms": 60000,
             })
         
-        # Review phase
         if steps:
             step_id += 1
             steps.append({
@@ -541,24 +594,21 @@ class PlannerAgent(BaseAgent):
             })
         
         if not steps:
-            # Default: research then review
             steps = [
                 {"id": 1, "description": f"Analyze: {task}", "agent": "researcher", "depends_on": [], "estimated_ms": 30000},
                 {"id": 2, "description": f"Review findings", "agent": "reviewer", "depends_on": [1], "estimated_ms": 15000},
             ]
         
-        total_estimated = sum(s["estimated_ms"] for s in steps)
-        
         return {
             "original_task": task,
             "steps": steps,
             "total_steps": len(steps),
-            "estimated_duration_ms": total_estimated,
+            "estimated_duration_ms": sum(s["estimated_ms"] for s in steps),
             "kg_context_used": bool(kg_context),
         }
 
 
-def create_agent(role: str, model: str, system_prompt: str, opa_gate: Optional[OPAPolicyGate] = None) -> BaseAgent:
+def create_agent(role: str, model: str, system_prompt: str, opa_gate: Optional[OPAPolicyGate] = None, router: Optional[ModelRouter] = None) -> BaseAgent:
     """Factory function to create agents by role."""
     agents = {
         "researcher": ResearcherAgent,
@@ -569,4 +619,4 @@ def create_agent(role: str, model: str, system_prompt: str, opa_gate: Optional[O
     agent_class = agents.get(role)
     if not agent_class:
         raise ValueError(f"Unknown agent role: {role}")
-    return agent_class(role, model, system_prompt, opa_gate)
+    return agent_class(role, model, system_prompt, opa_gate, router=router)

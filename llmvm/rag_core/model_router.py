@@ -520,31 +520,27 @@ class StructuredOutputError(Exception):
 # --- Default Configuration ---
 
 def create_default_router(
+    ollama_endpoint: str = "http://ollama:11434",
+    ollama_model: str = "qwen2.5:14b",
     lmstudio_endpoint: str = "http://localhost:1234",
     lmstudio_model: str = "microsoft/phi-4-reasoning-plus",
-    gpt4all_endpoint: str = "http://localhost:4891",
-    gpt4all_model: str = "mistral-7b-instruct",
 ) -> ModelRouter:
     """
-    Create default model router with LMStudio primary + GPT4All CPU fallback.
-    
-    This is the recommended setup for Aetheris:
-    - LMStudio: GPU-accelerated, primary provider
-    - GPT4All: CPU fallback when LMStudio unavailable
+    Create default model router with Ollama primary.
     """
     models = [
+        ModelInfo(
+            name=ollama_model,
+            provider=Provider.OLLAMA,
+            endpoint=ollama_endpoint,
+            capabilities=[ModelCapability.CHAT, ModelCapability.STRUCTURED_OUTPUT],
+            priority=0,
+        ),
         ModelInfo(
             name=lmstudio_model,
             provider=Provider.LMSTUDIO,
             endpoint=lmstudio_endpoint,
             capabilities=[ModelCapability.CHAT, ModelCapability.STRUCTURED_OUTPUT],
-            priority=0,
-        ),
-        ModelInfo(
-            name=gpt4all_model,
-            provider=Provider.GPT4ALL,
-            endpoint=gpt4all_endpoint,
-            capabilities=[ModelCapability.CHAT],
             priority=1,
         ),
     ]
