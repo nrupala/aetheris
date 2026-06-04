@@ -86,7 +86,8 @@ jobs:
           script: |
             set -e
             cd /opt/aetheris
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             docker compose build aetheris-core
             docker compose up -d --force-recreate aetheris-core
             docker compose up -d --force-recreate llmvm_nginx
