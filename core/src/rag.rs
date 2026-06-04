@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,14 +30,14 @@ impl Default for RagConfig {
 }
 
 impl RagConfig {
-    pub fn load(path: &PathBuf) -> Self {
+    pub fn load(path: &Path) -> Self {
         std::fs::read_to_string(path.join("rag_config.json"))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     }
 
-    pub fn save(&self, path: &PathBuf) {
+    pub fn save(&self, path: &Path) {
         if let Ok(json) = serde_json::to_string_pretty(self) {
             let _ = std::fs::write(path.join("rag_config.json"), &json);
         }
@@ -171,59 +171,54 @@ impl TextChunker {
                         }
                         sent_buffer.push_str(sentence);
                         sent_tokens += s_tokens;
-                    } else {
-                        if !sent_buffer.is_empty() {
-                            chunks.push(Chunk {
-                                text: sent_buffer.clone(),
-                                index: chunks.len(),
-                                source: source.to_string(),
-                                token_count: sent_tokens,
-                            });
-                            let overlap_start =
-                                sent_buffer.len().saturating_sub(self.chunk_overlap);
-                            let overlap = sent_buffer[overlap_start..].to_string();
-                            let overlap_tokens = Self::count_tokens(&overlap);
-                            sent_buffer = if !overlap.is_empty() {
-                                format!("{} {}", overlap, sentence)
-                            } else {
-                                sentence.clone()
-                            };
-                            sent_tokens = overlap_tokens + s_tokens;
+                    } else if !sent_buffer.is_empty() {
+                        chunks.push(Chunk {
+                            text: sent_buffer.clone(),
+                            index: chunks.len(),
+                            source: source.to_string(),
+                            token_count: sent_tokens,
+                        });
+                        let overlap_start = sent_buffer.len().saturating_sub(self.chunk_overlap);
+                        let overlap = sent_buffer[overlap_start..].to_string();
+                        let overlap_tokens = Self::count_tokens(&overlap);
+                        sent_buffer = if !overlap.is_empty() {
+                            format!("{} {}", overlap, sentence)
                         } else {
-                            let words: Vec<&str> = sentence.split_whitespace().collect();
-                            let mut word_buffer: Vec<&str> = Vec::new();
-                            let mut word_tokens = 0;
-                            for word in &words {
-                                let w_tok = Self::count_tokens(word);
-                                if word_tokens + w_tok > self.chunk_size && !word_buffer.is_empty()
-                                {
-                                    let hard_chunk = word_buffer.join(" ");
-                                    chunks.push(Chunk {
-                                        text: hard_chunk,
-                                        index: chunks.len(),
-                                        source: source.to_string(),
-                                        token_count: word_tokens,
-                                    });
-                                    let keep =
-                                        word_buffer.len().saturating_sub(self.chunk_overlap / 4);
-                                    word_buffer = word_buffer[keep..].to_vec();
-                                    word_tokens =
-                                        word_buffer.iter().map(|w| Self::count_tokens(w)).sum();
-                                }
-                                word_buffer.push(word);
-                                word_tokens += w_tok;
-                            }
-                            if !word_buffer.is_empty() {
+                            sentence.clone()
+                        };
+                        sent_tokens = overlap_tokens + s_tokens;
+                    } else {
+                        let words: Vec<&str> = sentence.split_whitespace().collect();
+                        let mut word_buffer: Vec<&str> = Vec::new();
+                        let mut word_tokens = 0;
+                        for word in &words {
+                            let w_tok = Self::count_tokens(word);
+                            if word_tokens + w_tok > self.chunk_size && !word_buffer.is_empty() {
+                                let hard_chunk = word_buffer.join(" ");
                                 chunks.push(Chunk {
-                                    text: word_buffer.join(" "),
+                                    text: hard_chunk,
                                     index: chunks.len(),
                                     source: source.to_string(),
                                     token_count: word_tokens,
                                 });
+                                let keep = word_buffer.len().saturating_sub(self.chunk_overlap / 4);
+                                word_buffer = word_buffer[keep..].to_vec();
+                                word_tokens =
+                                    word_buffer.iter().map(|w| Self::count_tokens(w)).sum();
                             }
-                            sent_buffer = String::new();
-                            sent_tokens = 0;
+                            word_buffer.push(word);
+                            word_tokens += w_tok;
                         }
+                        if !word_buffer.is_empty() {
+                            chunks.push(Chunk {
+                                text: word_buffer.join(" "),
+                                index: chunks.len(),
+                                source: source.to_string(),
+                                token_count: word_tokens,
+                            });
+                        }
+                        sent_buffer = String::new();
+                        sent_tokens = 0;
                     }
                 }
 

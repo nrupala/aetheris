@@ -28,7 +28,7 @@ impl AetherisBridge for OllamaBridge {
 
     async fn health_check(&self) -> bool {
         reqwest::Client::new()
-            .get(&format!("{}/v1/models", self.url))
+            .get(format!("{}/v1/models", self.url))
             .send()
             .await
             .map(|r| r.status().is_success())
@@ -200,7 +200,7 @@ impl AetherisBridge for OpaBridge {
 
     async fn health_check(&self) -> bool {
         reqwest::Client::new()
-            .get(&format!("{}/health", self.url))
+            .get(format!("{}/health", self.url))
             .send()
             .await
             .map(|r| r.status().is_success())
@@ -216,7 +216,7 @@ impl SecurityBridge for OpaBridge {
         });
         let client = reqwest::Client::new();
         let res = client
-            .post(&format!("{}/v1/data/aetheris/authz/allow", self.url))
+            .post(format!("{}/v1/data/aetheris/authz/allow", self.url))
             .json(&payload)
             .send()
             .await;

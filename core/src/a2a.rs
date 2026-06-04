@@ -63,7 +63,7 @@ impl A2AGateway {
         let mut convs = self.conversations.lock().unwrap();
         convs
             .entry(conversation_id.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(msg.clone());
 
         self.message_log.lock().unwrap().push(msg);

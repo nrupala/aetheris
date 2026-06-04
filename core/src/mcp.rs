@@ -14,6 +14,7 @@ pub struct MCPServer {
 }
 
 impl MCPServer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let server = Self {
             tools: Mutex::new(HashMap::new()),

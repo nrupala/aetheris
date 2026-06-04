@@ -763,7 +763,7 @@ async fn workflow_run_body(
         a.iter().map(|ag| ag.role().as_str().to_string()).collect()
     };
 
-    let pipeline = vec!["planner", "researcher", "coder"];
+    let pipeline = ["planner", "researcher", "coder"];
     for (idx, role) in pipeline.iter().enumerate() {
         let result = {
             let extracted = {
@@ -822,7 +822,7 @@ async fn workflow_run_body(
                 let res = Some(
                     agent
                         .execute(
-                            &task,
+                            task,
                             &serde_json::json!({
                                 "content": final_output, "rag_answer": "", "kg_context": "",
                                 "criteria": ["correctness", "quality", "security"]
@@ -870,7 +870,7 @@ async fn task_submit_handler(
     let agent_role = payload
         .role
         .as_deref()
-        .and_then(agents::AgentRole::from_str)
+        .and_then(|s| s.parse::<agents::AgentRole>().ok())
         .unwrap_or(agents::AgentRole::Planner);
     let ctx = payload.context.unwrap_or(serde_json::json!({}));
 
@@ -1381,7 +1381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let security_bridge: Arc<dyn SecurityBridge> =
         Arc::new(implementation::OpaBridge::new(opa_url.clone()));
 
-    let orchestrator_proxy = orch_url.map(|url| OrchestratorProxy::new(url));
+    let orchestrator_proxy = orch_url.map(OrchestratorProxy::new);
     let a2a_gateway = A2AGateway::new(300);
     let mcp_server = MCPServer::new();
 
@@ -1392,7 +1392,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ("coder", ai_url.clone()),
         ("reviewer", ai_url.clone()),
     ] {
-        let r = agents::AgentRole::from_str(role).unwrap_or(agents::AgentRole::Researcher);
+        let r = role
+            .parse::<agents::AgentRole>()
+            .unwrap_or(agents::AgentRole::Researcher);
         agent_vec.push(agents::create_agent(
             r,
             "qwen2.5:14b".to_string(),

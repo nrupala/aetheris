@@ -5,6 +5,7 @@ pub mod reviewer;
 
 use async_trait::async_trait;
 use serde::Serialize;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -27,14 +28,18 @@ impl AgentRole {
             AgentRole::Planner => "planner",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for AgentRole {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "researcher" => Some(AgentRole::Researcher),
-            "coder" => Some(AgentRole::Coder),
-            "reviewer" => Some(AgentRole::Reviewer),
-            "planner" => Some(AgentRole::Planner),
-            _ => None,
+            "researcher" => Ok(AgentRole::Researcher),
+            "coder" => Ok(AgentRole::Coder),
+            "reviewer" => Ok(AgentRole::Reviewer),
+            "planner" => Ok(AgentRole::Planner),
+            _ => Err(format!("unknown AgentRole: {}", s)),
         }
     }
 }
@@ -122,13 +127,14 @@ impl BaseAgent {
         model_bridge: Option<Arc<dyn ModelBridge>>,
         security_bridge: Option<Arc<dyn SecurityBridge>>,
     ) -> Self {
-        let id = format!("{}_{:x}", role.as_str(), {
-            let t = SystemTime::now()
+        let id = format!(
+            "{}_{:x}",
+            role.as_str(),
+            SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_nanos();
-            t
-        });
+                .as_nanos()
+        );
         Self {
             id,
             role,
