@@ -481,7 +481,7 @@ async fn rag_stats_handler(State(state): State<Arc<AppState>>) -> impl IntoRespo
         "total_sources": store_stats.as_ref().map(|s| s.total_sources).unwrap_or(0),
         "db_size_mb": store_stats.as_ref().map(|s| s.db_size_mb).unwrap_or(0.0),
         "collections": 1,
-        "avg_chunk_size": if file_count > 0 { total_size / file_count } else { 0 },
+        "avg_chunk_size": total_size.checked_div(file_count).unwrap_or(0),
     })).into_response()
 }
 
