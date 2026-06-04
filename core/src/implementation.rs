@@ -27,7 +27,7 @@ impl AetherisBridge for OllamaBridge {
     }
 
     async fn health_check(&self) -> bool {
-        reqwest::Client::new()
+        crate::util::http_client()
             .get(format!("{}/v1/models", self.url))
             .send()
             .await
@@ -42,7 +42,7 @@ impl OllamaBridge {
             "model": model,
             "prompt": content
         });
-        let res = reqwest::Client::new()
+        let res = crate::util::http_client()
             .post(format!("{}/api/embeddings", self.url))
             .json(&payload)
             .send()
@@ -106,7 +106,7 @@ impl ModelBridge for OllamaBridge {
             "query": query,
             "documents": documents
         });
-        let res = reqwest::Client::new()
+        let res = crate::util::http_client()
             .post(format!("{}/api/rerank", self.url))
             .json(&payload)
             .send()
@@ -127,7 +127,7 @@ impl ModelBridge for OllamaBridge {
     }
 
     async fn list_models(&self) -> Result<Vec<String>, String> {
-        let res = reqwest::Client::new()
+        let res = crate::util::http_client()
             .get(format!("{}/v1/models", self.url))
             .send()
             .await
@@ -162,7 +162,7 @@ impl ModelBridge for OllamaBridge {
             "temperature": 0.1,
             "stream": false
         });
-        let res = reqwest::Client::new()
+        let res = crate::util::http_client()
             .post(format!("{}/v1/chat/completions", self.url))
             .json(&payload)
             .send()
@@ -172,7 +172,8 @@ impl ModelBridge for OllamaBridge {
             .json()
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
-        let msg = &body["choices"][0]["message"];
+        let choice = body["choices"].as_array().and_then(|arr| arr.first());
+        let msg = choice.and_then(|c| c.get("message")).unwrap_or(&serde_json::Value::Null);
         msg["content"]
             .as_str()
             .filter(|s| !s.is_empty())
@@ -199,7 +200,7 @@ impl AetherisBridge for OpaBridge {
     }
 
     async fn health_check(&self) -> bool {
-        reqwest::Client::new()
+        crate::util::http_client()
             .get(format!("{}/health", self.url))
             .send()
             .await
@@ -214,7 +215,7 @@ impl SecurityBridge for OpaBridge {
         let payload = serde_json::json!({
             "input": { "peer_id": peer_id, "action": action }
         });
-        let client = reqwest::Client::new();
+        let client = crate::util::http_client();
         let res = client
             .post(format!("{}/v1/data/aetheris/authz/allow", self.url))
             .json(&payload)

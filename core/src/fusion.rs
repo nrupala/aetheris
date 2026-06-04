@@ -145,8 +145,7 @@ impl ModelBridge for OpenRouterBridge {
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
         });
-        let client = reqwest::Client::new();
-        let res = client
+        let res = crate::util::http_client()
             .post(format!("{}/v1/chat/completions", self.url))
             .header("Authorization", format!("Bearer {}", api_key))
             .header("HTTP-Referer", "https://github.com/aetheris")
@@ -159,8 +158,9 @@ impl ModelBridge for OpenRouterBridge {
             .json()
             .await
             .map_err(|e| format!("Failed to parse OpenRouter response: {}", e))?;
-        body["choices"][0]["message"]["content"]
-            .as_str()
+        let choice = body["choices"].as_array().and_then(|arr| arr.first());
+        choice
+            .and_then(|c| c["message"]["content"].as_str())
             .map(|s| s.to_string())
             .ok_or_else(|| "No content in OpenRouter response".to_string())
     }
@@ -186,8 +186,7 @@ impl ModelBridge for OpenRouterBridge {
         let api_key = self
             .api_key()
             .ok_or_else(|| "OpenRouter not configured".to_string())?;
-        let client = reqwest::Client::new();
-        let res = client
+        let res = crate::util::http_client()
             .get(format!("{}/v1/models", self.url))
             .header("Authorization", format!("Bearer {}", api_key))
             .send()
@@ -235,8 +234,7 @@ impl ExaSearchBridge {
             "query": query,
             "num_results": num_results,
         });
-        let client = reqwest::Client::new();
-        let res = client
+        let res = crate::util::http_client()
             .post(format!("{}/v1/search", self.url))
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")

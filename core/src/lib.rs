@@ -11,5 +11,6 @@ pub mod metrics;
 pub mod proxy;
 pub mod rag;
 pub mod sync;
+pub mod util;
 pub mod wal;
 pub mod watcher;

@@ -10,7 +10,7 @@ pub struct AetherisConnector {
 #[allow(dead_code)]
 impl AetherisConnector {
     pub async fn authorize(&self, peer_id: &str, action: &str) -> bool {
-        let client = reqwest::Client::new();
+        let client = crate::util::http_client();
         let body = json!({
             "input": {
                 "peer_id": peer_id,
@@ -27,7 +27,7 @@ impl AetherisConnector {
     }
 
     pub async fn index_semantic(&self, file_content: String) {
-        let client = reqwest::Client::new();
+        let client = crate::util::http_client();
         let payload = json!({
             "model": "text-embedding-nomic-embed-text-v1.5",
             "input": file_content
@@ -42,7 +42,7 @@ impl AetherisConnector {
 
     pub async fn ai_query(&self, prompt: &str, model: Option<&str>) -> Result<String, String> {
         let model = model.unwrap_or("qwen2.5:14b");
-        let client = reqwest::Client::new();
+        let client = crate::util::http_client();
         let payload = json!({
             "model": model,
             "messages": [{
@@ -67,7 +67,8 @@ impl AetherisConnector {
             .map_err(|e| format!("Failed to parse AI response: {}", e))?;
 
         if status.is_success() {
-            let msg = &body["choices"][0]["message"];
+            let choice = body["choices"].as_array().and_then(|arr| arr.first());
+            let msg = choice.and_then(|c| c.get("message")).unwrap_or(&serde_json::Value::Null);
             let content = msg["content"]
                 .as_str()
                 .filter(|s| !s.is_empty())
@@ -82,7 +83,7 @@ impl AetherisConnector {
     }
 
     pub async fn list_models(&self) -> Result<Vec<String>, String> {
-        let client = reqwest::Client::new();
+        let client = crate::util::http_client();
         let res = client
             .get(format!("{}/v1/models", self.ai_url))
             .send()
