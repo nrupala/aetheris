@@ -42,6 +42,9 @@ test_*.py
 retry_arm*
 arm_retry_*
 
+# Production reports (auto-generated)
+aetheris-production-report.md
+
 # Temp files
 tmp_*.py
 tmp_*.txt
