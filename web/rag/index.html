@@ -436,8 +436,7 @@
                 const reasoningEnabled = reasoningToggle.checked;
                 const body = {
                     query: q,
-                    use_rag: true,
-                    reasoning: reasoningEnabled,
+                    reasoning_enabled: reasoningEnabled,
                     max_iterations: reasoningEnabled ? parseInt(document.getElementById('max-iterations').value) : undefined,
                     confidence_threshold: reasoningEnabled ? parseFloat(document.getElementById('confidence-threshold').value) : undefined,
                     top_k: parseInt(document.getElementById('top-k').value),
@@ -445,14 +444,15 @@
                     include_history: true
                 };
                 const r = await fetch('/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-                const data = await r.json();
-                let html = `<h3>${q}`;
-                if (data.converged !== undefined && data.converged) {
-                    html += `<span class="reasoning-badge">${data.iterations_used || 1} iterations</span>`;
+                if (!r.ok) {
+                    const errText = await r.text();
+                    throw new Error(`Server ${r.status}: ${errText.slice(0, 200)}`);
                 }
-                html += `</h3>`;
+                const data = await r.json();
+                if (data.error) throw new Error(data.error);
+                let html = `<h3>${q}</h3>`;
                 html += `<p>${data.answer || 'No answer found'}</p>`;
-                let metaHtml = `Model: ${data.model || '?'} • ${data.chunks_searched || 0} chunks • ${data.response_time || 0}s • ${data.tokens_used || 0} tokens`;
+                let metaHtml = `Model: ${data.model || data.query || '?'} • ${data.chunks_searched || data.chunks_retrieved || 0} chunks • ${data.response_time || Math.round((data.took_ms || 0) / 1000) || '<1'}s`;
                 if (data.confidence !== undefined) {
                     const confPct = Math.round(data.confidence * 100);
                     const confColor = data.confidence >= 0.7 ? 'var(--green)' : data.confidence >= 0.4 ? 'var(--orange)' : 'var(--red)';
@@ -466,6 +466,8 @@
                         html += `<div class="step"><span class="iteration">Iteration ${i+1}</span>: ${step.thought || 'Evaluating...'} <span class="confidence">(confidence: ${(step.confidence * 100).toFixed(0)}%)</span></div>`;
                     });
                     html += '</div>';
+                } else if (data.reasoning) {
+                    html += '<div class="reasoning-trace"><h4 style="color:var(--purple);font-size:11px;margin-bottom:6px">Reasoning</h4><div class="step">' + data.reasoning + '</div></div>';
                 }
                 if (data.sources && data.sources.length) {
                     html += '<div class="sources"><h4>Sources</h4>' + data.sources.map(s => `<span class="source-tag">${s.source || s} (score: ${(s.score || 0).toFixed(2)})</span>`).join('') + '</div>';
@@ -499,7 +501,8 @@
         async function loadDocuments() {
             try {
                 const r = await fetch('/sources');
-                const sources = await r.json();
+                let sources = await r.json();
+                if (sources && sources.sources) sources = sources.sources;
                 const list = document.getElementById('file-list');
                 if (!sources || !sources.length) { list.innerHTML = '<p style="color:var(--muted)">No documents indexed yet</p>'; return; }
                 list.innerHTML = sources.map(s => `<div class="file-item"><div><div class="name">${s.source}</div><div class="meta">${s.chunks} chunks • Last indexed: ${s.last_seen}</div></div><button onclick="deleteDoc('${s.source.replace(/'/g, "\\'")}')">Delete</button></div>`).join('');

@@ -20,15 +20,11 @@ impl Default for RagConfig {
             chunk_size: 512,
             chunk_overlap: 64,
             top_k: 5,
-            query_model: "qwen3:8b".to_string(),
+            query_model: "phi4-mini".to_string(),
             reasoning_enabled: false,
-            embed_models: vec![
-                "nomic-embed-text".to_string(),
-                "deepseek-r1:8b".to_string(),
-                "qwen3:8b".to_string(),
-            ],
-            reranker_model: "bge-reranker-v2-m3".to_string(),
-            reranker_enabled: true,
+            embed_models: vec!["nomic-embed-text".to_string()],
+            reranker_model: String::new(),
+            reranker_enabled: false,
         }
     }
 }

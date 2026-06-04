@@ -312,28 +312,41 @@ async fn rag_query_handler(
             ""
         };
         format!(
-            "Context:\n{}\n\nQuestion: {}\n\nAnswer based on the context above.{}\n\nReturn as JSON with 'answer', 'sources' (list of source filenames), 'confidence' (0.0-1.0){} fields.",
+            "Context:\n{}\n\nQuestion: {}\n\nAnswer based on the context above.{}\n\nReturn ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\" (list of source filenames), \"confidence\" (0.0-1.0){}}}.",
             context, query, reasoning,
-            if use_reasoning { ", and 'reasoning' (string)" } else { "" }
+            if use_reasoning { ", \"reasoning\" (string)" } else { "" }
         )
     } else {
-        format!("Question: {}\n\nAnswer the question. Return as JSON with 'answer', 'sources', 'confidence', and{} fields.",
-            query, if use_reasoning { " 'reasoning'" } else { "" })
+        format!("Question: {}\n\nAnswer the question. Return ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\", \"confidence\"{}}}.", query, if use_reasoning { ", \"reasoning\"" } else { "" })
     };
 
     match state.model_bridge.query(&prompt, &cfg.query_model).await {
         Ok(response) => {
-            let parsed: serde_json::Value = serde_json::from_str(&response).unwrap_or_else(
+            let cleaned = response
+                .trim_start_matches("```json\n")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim();
+            let parsed: serde_json::Value = serde_json::from_str(cleaned).unwrap_or_else(
                 |_| serde_json::json!({"answer": response, "sources": [], "confidence": 0.5}),
             );
+            let sources_val = parsed.get("sources").cloned().unwrap_or(serde_json::json!([]));
+            let src = if sources_val.as_array().map(|a| a.is_empty()).unwrap_or(true) {
+                context_chunks.as_ref().map(|chunks| {
+                    serde_json::json!(chunks.iter().map(|c| serde_json::json!({"source": c.source, "score": c.score})).collect::<Vec<_>>())
+                }).unwrap_or(serde_json::json!([]))
+            } else {
+                sources_val
+            };
             axum::Json(serde_json::json!({
                 "query": query,
                 "answer": parsed.get("answer").and_then(|v| v.as_str()).unwrap_or(&response),
-                "sources": parsed.get("sources").or(Some(&serde_json::json!([]))).unwrap(),
+                "model": cfg.query_model,
+                "sources": src,
                 "confidence": parsed.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
                 "top_k": top_k,
                 "reasoning": parsed.get("reasoning").and_then(|v| v.as_str()).unwrap_or(""),
-                "chunks_retrieved": context_chunks.as_ref().map(|c| c.len()).unwrap_or(0),
+                "chunks_searched": context_chunks.as_ref().map(|c| c.len()).unwrap_or(0),
                 "reranker_used": use_reranker,
                 "reranker_model": cfg.reranker_model,
                 "took_ms": 0,
