@@ -330,11 +330,20 @@ async fn rag_query_handler(
             let parsed: serde_json::Value = serde_json::from_str(cleaned).unwrap_or_else(
                 |_| serde_json::json!({"answer": response, "sources": [], "confidence": 0.5}),
             );
-            let sources_val = parsed.get("sources").cloned().unwrap_or(serde_json::json!([]));
+            let sources_val = parsed
+                .get("sources")
+                .cloned()
+                .unwrap_or(serde_json::json!([]));
             let src = if sources_val.as_array().map(|a| a.is_empty()).unwrap_or(true) {
-                context_chunks.as_ref().map(|chunks| {
-                    serde_json::json!(chunks.iter().map(|c| serde_json::json!({"source": c.source, "score": c.score})).collect::<Vec<_>>())
-                }).unwrap_or(serde_json::json!([]))
+                context_chunks
+                    .as_ref()
+                    .map(|chunks| {
+                        serde_json::json!(chunks
+                            .iter()
+                            .map(|c| serde_json::json!({"source": c.source, "score": c.score}))
+                            .collect::<Vec<_>>())
+                    })
+                    .unwrap_or(serde_json::json!([]))
             } else {
                 sources_val
             };
