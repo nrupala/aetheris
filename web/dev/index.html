@@ -280,6 +280,21 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
     <h2>RAG Statistics</h2>
     <div class="metric-grid" id="rag-stats-grid"></div>
   </div>
+  <div class="card">
+    <h2>Dev Endpoints</h2>
+    <details ontoggle="if(this.open)fetchDevLogs()">
+      <summary>Logs <span id="dev-log-count" style="color:#64748b;font-size:0.75rem;"></span></summary>
+      <div id="dev-log-container" style="max-height:300px;overflow-y:auto;font-family:monospace;font-size:0.8rem;margin-top:0.5rem;"><p style="color:#64748b;">Open to load audit logs...</p></div>
+    </details>
+    <details ontoggle="if(this.open)fetchDevConfig()" style="margin-top:0.5rem;">
+      <summary>Config Files <span id="dev-config-count" style="color:#64748b;font-size:0.75rem;"></span></summary>
+      <div id="dev-config-container" style="margin-top:0.5rem;"><p style="color:#64748b;">Open to load config files...</p></div>
+    </details>
+    <details ontoggle="if(this.open)fetchDevMetrics()" style="margin-top:0.5rem;">
+      <summary>Metrics <span id="dev-metrics-count" style="color:#64748b;font-size:0.75rem;"></span></summary>
+      <div id="dev-metrics-container" style="margin-top:0.5rem;"></div>
+    </details>
+  </div>
 </div>
 
 </div>
@@ -303,9 +318,9 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
     <h3>Tabs</h3>
     <ul>
       <li><strong>API Console</strong> — Execute requests against any Aetheris endpoint with method/body control</li>
-      <li><strong>System Logs</strong> — View live WAL-backed audit trail of all operations</li>
-      <li><strong>Config</strong> — View runtime configuration files from <code>/etc/aetheris/</code></li>
-      <li><strong>Metrics</strong> — Service health dashboard with uptime, containers, and status monitoring</li>
+      <li><strong>RAG Config</strong> — Load, edit, and save RAG pipeline configuration (chunking, models, reranker)</li>
+      <li><strong>RAG Query</strong> — Interactive query test with configurable top K, reasoning, and reranking</li>
+      <li><strong>System</strong> — Service health dashboard with uptime, models, and RAG statistics</li>
     </ul>
 
     <h3>API Reference</h3>
@@ -466,86 +481,88 @@ function clearApiResponse() {
   document.getElementById('api-latency').textContent = '';
 }
 
-// LOGS
-async function fetchLogs() {
-  const container = document.getElementById('log-container');
-  const count = document.getElementById('log-count');
-  container.innerHTML = '<div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">Loading...</span></div>';
+
+
+
+// DEV LOGS
+async function fetchDevLogs() {
+  const container = document.getElementById('dev-log-container');
+  const count = document.getElementById('dev-log-count');
   try {
     const r = await fetch('/' + apiPath('api/dev/logs'));
     const data = await r.json();
     const logs = data.logs || [];
-    count.textContent = `${logs.length} entries`;
-    if (logs.length === 0) {
-      container.innerHTML = '<div class="log-entry"><span class="log-time">---</span><span class="log-level INFO">INFO</span><span class="log-msg">No log entries.</span></div>';
-      return;
-    }
+    count.textContent = `(${logs.length})`;
+    if (!logs.length) { container.innerHTML = '<p style="color:#64748b;">No log entries.</p>'; return; }
     container.innerHTML = logs.map(l =>
-      `<div class="log-entry">
-        <span class="log-time">${l.timestamp || ''}</span>
-        <span class="log-level ${l.level || 'INFO'}">${l.level || 'INFO'}</span>
-        <span class="log-msg">${escapeHtml(l.message || '')}</span>
+      `<div style="padding:2px 0;border-bottom:1px solid #1e293b;">
+        <span style="color:#64748b;">${l.timestamp || ''}</span>
+        <span style="color:${l.level === 'ERROR' ? '#ef4444' : l.level === 'WARN' ? '#f59e0b' : '#22c55e'}">[${l.level || 'INFO'}]</span>
+        <span>${escapeHtml(l.message || '')}</span>
       </div>`
     ).join('');
   } catch (e) {
-    container.innerHTML = `<div class="log-entry"><span class="log-time">---</span><span class="log-level ERROR">ERROR</span><span class="log-msg">${e.message}</span></div>`;
-  }
-}
-
-// CONFIG
-async function fetchConfig() {
-  const container = document.getElementById('config-container');
-  const count = document.getElementById('config-count');
-  container.innerHTML = '<p style="color:#64748b;">Loading...</p>';
-  try {
-    const r = await fetch('/' + apiPath('api/dev/config'));
-    const data = await r.json();
-    const files = Object.keys(data);
-    count.textContent = `${files.length} files`;
-    if (files.length === 0) {
-      container.innerHTML = '<p style="color:#64748b;">No config files accessible from this container.</p>';
-      return;
-    }
-    container.innerHTML = files.map(name =>
-      `<div class="config-file">
-        <h3><span style="color:#60a5fa;">${escapeHtml(name)}</span> <span class="size">${data[name].length} bytes</span></h3>
-        <pre>${escapeHtml(data[name])}</pre>
-      </div>`
-    ).join('');
-  } catch (e) {
+    count.textContent = '(error)';
     container.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
   }
 }
 
-// METRICS
-async function fetchMetrics() {
-  const serviceList = document.getElementById('service-list');
-  const sysMetrics = document.getElementById('system-metrics');
+// DEV CONFIG
+async function fetchDevConfig() {
+  const container = document.getElementById('dev-config-container');
+  const count = document.getElementById('dev-config-count');
+  try {
+    const r = await fetch('/' + apiPath('api/dev/config'));
+    const data = await r.json();
+    const files = Object.keys(data);
+    count.textContent = `(${files.length})`;
+    if (!files.length) { container.innerHTML = '<p style="color:#64748b;">No config files accessible.</p>'; return; }
+    container.innerHTML = files.map(name =>
+      `<div style="margin-bottom:0.75rem;border-bottom:1px solid #1e293b;padding-bottom:0.5rem;">
+        <strong style="color:#60a5fa;">${escapeHtml(name)}</strong> <span style="color:#64748b;font-size:0.75rem;">${data[name].length} bytes</span>
+        <pre style="margin-top:0.25rem;padding:0.5rem;background:#0f172a;border:1px solid #1e293b;border-radius:4px;max-height:200px;overflow-y:auto;font-size:0.75rem;">${escapeHtml(data[name])}</pre>
+      </div>`
+    ).join('');
+  } catch (e) {
+    count.textContent = '(error)';
+    container.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
+  }
+}
+
+// DEV METRICS
+async function fetchDevMetrics() {
+  const container = document.getElementById('dev-metrics-container');
+  const count = document.getElementById('dev-metrics-count');
   try {
     const r = await fetch('/' + apiPath('api/dev/metrics'));
     const data = await r.json();
-
-    // Services
     const services = data.services || [];
-    serviceList.innerHTML = services.map(s =>
-      `<div class="service-item">
-        <span class="dot ${s.status === 'running' ? 'up' : 'down'}"></span>
-        <span class="name">${escapeHtml(s.name)}</span>
-        <span class="port">:${s.port}</span>
-      </div>`
-    ).join('');
-
-    // System metrics
     const containers = data.containers || {};
-    sysMetrics.innerHTML = `
-      <div class="metric-card"><div class="metric-value">${containers.total || '?'}</div><div class="metric-label">Total Containers</div></div>
-      <div class="metric-card"><div class="metric-value" style="color:${containers.running === containers.total ? '#22c55e' : '#ef4444'}">${containers.running || '?'}</div><div class="metric-label">Running</div></div>
-      <div class="metric-card"><div class="metric-value">${services.length}</div><div class="metric-label">Monitored Services</div></div>
-      <div class="metric-card"><div class="metric-value">${data.uptime_hours || 0}h</div><div class="metric-label">Uptime</div></div>
-    `;
+    count.textContent = `(${services.length} svc)`;
+
+    let html = '<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">';
+    html += `<div class="metric-card" style="flex:1;min-width:100px;"><div class="metric-value">${containers.total || '?'}</div><div class="metric-label">Containers</div></div>`;
+    html += `<div class="metric-card" style="flex:1;min-width:100px;"><div class="metric-value" style="color:${containers.running === containers.total ? '#22c55e' : '#ef4444'}">${containers.running || '?'}</div><div class="metric-label">Running</div></div>`;
+    html += `<div class="metric-card" style="flex:1;min-width:100px;"><div class="metric-value">${data.uptime_hours || 0}h</div><div class="metric-label">Uptime</div></div>`;
+    html += '</div>';
+
+    if (services.length) {
+      html += '<div style="font-size:0.8rem;">';
+      services.forEach(s => {
+        const statusColor = s.status === 'running' ? '#22c55e' : '#ef4444';
+        html += `<div style="padding:4px 0;border-bottom:1px solid #1e293b;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${statusColor};margin-right:0.5rem;"></span>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span style="color:#64748b;margin-left:0.5rem;">port ${s.port || '?'}</span>
+          <span style="float:right;color:${statusColor};">${s.status || '?'}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    container.innerHTML = html;
   } catch (e) {
-    serviceList.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
-    sysMetrics.innerHTML = '';
+    count.textContent = '(error)';
+    container.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
   }
 }
 

@@ -96,6 +96,14 @@ impl TextChunker {
         text.len() / 4
     }
 
+    fn char_trim_end(s: &str, n: usize) -> String {
+        s.chars().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect()
+    }
+
+    fn char_trim_start(s: &str, n: usize) -> String {
+        s.chars().skip(n).collect::<String>()
+    }
+
     fn split_by_paragraphs(text: &str) -> Vec<String> {
         let text = text.replace("\r\n", "\n").replace("\r", "\n");
         text.split("\n\n")
@@ -178,8 +186,7 @@ impl TextChunker {
                             source: source.to_string(),
                             token_count: sent_tokens,
                         });
-                        let overlap_start = sent_buffer.len().saturating_sub(self.chunk_overlap);
-                        let overlap = sent_buffer[overlap_start..].to_string();
+                        let overlap = Self::char_trim_end(&sent_buffer, self.chunk_overlap.min(sent_buffer.chars().count()));
                         let overlap_tokens = Self::count_tokens(&overlap);
                         sent_buffer = if !overlap.is_empty() {
                             format!("{} {}", overlap, sentence)
@@ -234,8 +241,7 @@ impl TextChunker {
             }
 
             if !current_text.is_empty() {
-                let overlap_start = current_text.len().saturating_sub(self.chunk_overlap);
-                let overlap = &current_text[overlap_start..];
+                let overlap = Self::char_trim_end(&current_text, self.chunk_overlap.min(current_text.chars().count()));
                 current_text = if !overlap.is_empty() {
                     format!("{}\n\n{}", overlap, para)
                 } else {
@@ -248,7 +254,8 @@ impl TextChunker {
                     token_count: self.chunk_size,
                 });
 
-                current_text = current_text[self.chunk_size.min(current_text.len())..]
+                let skip = self.chunk_size.min(current_text.chars().count());
+                current_text = Self::char_trim_start(&current_text, skip)
                     .trim_start()
                     .to_string();
                 current_tokens = Self::count_tokens(&current_text);
@@ -286,6 +293,7 @@ impl VectorStore {
             rusqlite::Connection::open(&path).map_err(|e| format!("Failed to open db: {}", e))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
             .map_err(|e| format!("Failed to set pragmas: {}", e))?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e| format!("Failed pragma foreign_keys: {}", e))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS chunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -325,6 +333,7 @@ impl VectorStore {
         }
 
         let conn = self.conn.lock().unwrap();
+        conn.execute("BEGIN IMMEDIATE", []).map_err(|e| format!("Failed to begin transaction: {}", e))?;
         let mut ids = Vec::new();
 
         for (chunk, embedding) in chunks.iter().zip(embeddings.iter()) {
@@ -354,6 +363,7 @@ impl VectorStore {
             ids.push(chunk_id);
         }
 
+        conn.execute("COMMIT", []).map_err(|e| format!("Failed to commit transaction: {}", e))?;
         Ok(ids)
     }
 

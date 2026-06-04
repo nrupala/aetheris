@@ -17,6 +17,7 @@ mod connector;
 mod fusion;
 mod guardian;
 mod implementation;
+mod kg;
 mod mcp;
 mod metrics;
 mod proxy;
@@ -31,6 +32,7 @@ use agents::Agent;
 use bridge::{ModelBridge, SecurityBridge};
 use fusion::{ExaSearchBridge, FusionRouter, KeyManager, OpenRouterBridge};
 use guardian::Guardian;
+use kg::KnowledgeGraph;
 use mcp::MCPServer;
 use proxy::OrchestratorProxy;
 use rag::VectorStore;
@@ -54,6 +56,8 @@ pub struct AppState {
     pub fusion_router: Option<FusionRouter>,
     pub guardian: Arc<Guardian>,
     pub rag_config: Arc<Mutex<rag::RagConfig>>,
+    pub knowledge_graph: Option<Arc<KnowledgeGraph>>,
+    pub start_time: std::time::Instant,
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────
@@ -191,8 +195,19 @@ async fn search_handler(
 async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let ai_ok = state.model_bridge.list_models().await.is_ok();
     let agents_len = state.agents.lock().unwrap().len();
+    let kg_ok = state.knowledge_graph.is_some();
+    let vs_ok = state.vector_store.is_some();
+    let mut services = vec![
+        serde_json::json!({"name": "aetheris_core", "status": if ai_ok { "running" } else { "degraded" }, "port": 8080}),
+        serde_json::json!({"name": "vector_store", "status": if vs_ok { "running" } else { "unavailable" }, "port": 0}),
+        serde_json::json!({"name": "knowledge_graph", "status": if kg_ok { "running" } else { "unavailable" }, "port": 0}),
+    ];
+    if state.orchestrator_proxy.is_some() {
+        services.push(serde_json::json!({"name": "orchestrator_proxy", "status": "running", "port": 9090}));
+    }
     axum::Json(serde_json::json!({
         "status": "ok",
+        "services": services,
         "agents": agents_len,
         "tasks": 0,
         "tools": state.mcp_server.list_tools_json()["tools"].as_array().map(|a| a.len()).unwrap_or(0),
@@ -543,6 +558,11 @@ async fn rag_ingest_handler(
                                 match store.add_chunks(&chunks, &embeddings) {
                                     Ok(ids) => {
                                         total_chunks += ids.len();
+                                            if let Some(ref kg) = state.knowledge_graph {
+                                            for chunk in &chunks {
+                                                let _ = kg.ingest(&chunk.text, &name);
+                                            }
+                                        }
                                         state
                                             .wal
                                             .lock()
@@ -571,7 +591,7 @@ async fn rag_ingest_handler(
 
     axum::Json(serde_json::json!({
         "status": "success", "files_uploaded": uploaded,
-        "chunks_indexed": if total_chunks > 0 { total_chunks } else { (uploaded * 3) as usize },
+        "chunks_indexed": total_chunks,
         "message": format!("Uploaded {} file(s) and indexed {} chunk(s)", uploaded, total_chunks)
     }))
     .into_response()
@@ -995,38 +1015,47 @@ async fn a2a_messages_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
 // ─── Knowledge Graph ─────────────────────────────────────────────
 
 async fn knowledge_graph_entities_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    if let Some(ref proxy) = state.orchestrator_proxy {
-        let uri = Uri::from_static("/knowledge-graph/entities");
-        return proxy
-            .forward(Method::GET, &uri, axum::body::Bytes::new())
-            .await;
-    }
-    axum::Json(serde_json::json!({"entities": [], "total": 0})).into_response()
+    match state.knowledge_graph {
+        Some(ref kg) => {
+            match kg.get_entities(None, 500) {
+                Ok(entities) => axum::Json(serde_json::json!({"entities": entities, "total": entities.len()})),
+                Err(e) => axum::Json(serde_json::json!({"entities": [], "total": 0, "error": e})),
+            }
+        }
+        None => {
+            axum::Json(serde_json::json!({"entities": [], "total": 0, "note": "knowledge_graph not initialized"}))
+        }
+    }.into_response()
 }
 
 async fn knowledge_graph_relations_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Some(ref proxy) = state.orchestrator_proxy {
-        let uri = Uri::from_static("/knowledge-graph/relations");
-        return proxy
-            .forward(Method::GET, &uri, axum::body::Bytes::new())
-            .await;
-    }
-    axum::Json(serde_json::json!({"relations": [], "total": 0})).into_response()
+    match state.knowledge_graph {
+        Some(ref kg) => {
+            match kg.get_relations(500) {
+                Ok(relations) => axum::Json(serde_json::json!({"relations": relations, "total": relations.len()})),
+                Err(e) => axum::Json(serde_json::json!({"relations": [], "total": 0, "error": e})),
+            }
+        }
+        None => {
+            axum::Json(serde_json::json!({"relations": [], "total": 0, "note": "knowledge_graph not initialized"}))
+        }
+    }.into_response()
 }
 
 async fn knowledge_graph_stats_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    if let Some(ref proxy) = state.orchestrator_proxy {
-        let uri = Uri::from_static("/knowledge-graph/stats");
-        return proxy
-            .forward(Method::GET, &uri, axum::body::Bytes::new())
-            .await;
-    }
-    axum::Json(
-        serde_json::json!({"entities": 0, "relations": 0, "clusters": 0, "central_nodes": []}),
-    )
-    .into_response()
+    match state.knowledge_graph {
+        Some(ref kg) => {
+            match kg.get_stats() {
+                Ok(stats) => axum::Json(serde_json::json!(stats)),
+                Err(e) => axum::Json(serde_json::json!({"entities": 0, "relations": 0, "clusters": 0, "central_nodes": [], "error": e})),
+            }
+        }
+        None => {
+            axum::Json(serde_json::json!({"entities": 0, "relations": 0, "clusters": 0, "central_nodes": [], "note": "knowledge_graph not initialized"}))
+        }
+    }.into_response()
 }
 
 async fn coordinator_circuits_handler() -> impl IntoResponse {
@@ -1068,16 +1097,18 @@ async fn dev_logs_handler(State(state): State<Arc<AppState>>) -> impl IntoRespon
     axum::Json(serde_json::json!({"logs": entries}))
 }
 
-async fn dev_config_handler(State(_state): State<Arc<AppState>>) -> impl IntoResponse {
-    let config_dir = std::path::Path::new("/etc/aetheris");
+async fn dev_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut files: HashMap<String, String> = HashMap::new();
-    if let Ok(entries) = std::fs::read_dir(config_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if let Ok(content) = std::fs::read_to_string(&path) {
-                        files.insert(name.to_string(), content);
+    let config_dir = state.vault_path.join("config");
+    if config_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&config_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            files.insert(name.to_string(), content);
+                        }
                     }
                 }
             }
@@ -1086,14 +1117,20 @@ async fn dev_config_handler(State(_state): State<Arc<AppState>>) -> impl IntoRes
     axum::Json(files)
 }
 
-async fn dev_metrics_handler() -> impl IntoResponse {
+async fn dev_metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let uptime_hours = state.start_time.elapsed().as_secs_f64() / 3600.0;
+    let mut containers = vec![
+        serde_json::json!({"name": "aetheris_core", "status": "running", "port": 8080}),
+    ];
+    if state.vector_store.is_some() {
+        containers.push(serde_json::json!({"name": "aetheris_vector_store", "status": "running", "port": 0}));
+    }
+    if state.knowledge_graph.is_some() {
+        containers.push(serde_json::json!({"name": "aetheris_knowledge_graph", "status": "running", "port": 0}));
+    }
     axum::Json(serde_json::json!({
-        "containers": { "total": 12, "running": 12 },
-        "services": [
-            {"name": "aetheris_core", "status": "running", "port": 8080},
-            {"name": "aetheris_mesh", "status": "running", "port": 51820},
-        ],
-        "uptime_hours": 0
+        "containers": containers,
+        "uptime_hours": uptime_hours
     }))
 }
 
@@ -1457,6 +1494,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let vector_store = VectorStore::new(&vault_path.join("vectors.db").to_string_lossy()).ok();
+    let knowledge_graph = KnowledgeGraph::new(&vault_path.join("knowledge_graph.db")).ok();
+    if knowledge_graph.is_none() {
+        eprintln!("Warning: KnowledgeGraph failed to initialize (non-fatal)");
+    }
     if vector_store.is_some() {
         println!(
             "Vector store initialized at {:?}",
@@ -1507,6 +1548,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         fusion_router: Some(fusion_router),
         guardian,
         rag_config,
+        knowledge_graph: knowledge_graph.map(Arc::new),
+        start_time: std::time::Instant::now(),
     });
 
     let app = Router::new()

@@ -5,6 +5,7 @@ pub mod config;
 pub mod connector;
 pub mod fusion;
 pub mod guardian;
+pub mod kg;
 pub mod implementation;
 pub mod mcp;
 pub mod metrics;
