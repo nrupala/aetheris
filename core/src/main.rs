@@ -397,7 +397,7 @@ async fn rag_sources_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
             .into_iter()
             .map(|s| {
                 serde_json::json!({
-                    "name": s.source, "chunks": s.chunk_count,
+                    "source": s.source, "chunks": s.chunk_count,
                     "first_seen": s.first_seen, "last_seen": s.last_seen
                 })
             })
@@ -423,11 +423,13 @@ async fn rag_sources_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
                         })
                     {
                         if let Ok(meta) = entry.metadata().await {
+                            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                             sources.push(serde_json::json!({
-                                "name": path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
+                                "source": name,
                                 "size": meta.len(),
                                 "type": path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default(),
-                                "chunks": 0
+                                "chunks": 0,
+                                "last_seen": ""
                             }));
                         }
                     }
@@ -519,68 +521,118 @@ async fn rag_config_put_handler(
     axum::Json(serde_json::json!({"status": "saved", "config": cfg}))
 }
 
+fn supported_ingest_ext(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".txt")
+        || lower.ends_with(".md")
+        || lower.ends_with(".json")
+        || lower.ends_with(".yaml")
+        || lower.ends_with(".yml")
+        || lower.ends_with(".csv")
+        || lower.ends_with(".xml")
+        || lower.ends_with(".html")
+        || lower.ends_with(".htm")
+        || lower.ends_with(".rs")
+        || lower.ends_with(".py")
+        || lower.ends_with(".js")
+        || lower.ends_with(".ts")
+        || lower.ends_with(".toml")
+        || lower.ends_with(".pdf")
+}
+
 async fn rag_ingest_handler(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     let mut uploaded = 0u64;
     let mut total_chunks = 0usize;
+    let mut errors: Vec<String> = Vec::new();
 
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.file_name().unwrap_or("unknown").to_string();
+
+        if !supported_ingest_ext(&name) {
+            errors.push(format!(
+                "\"{}\": unsupported file type — only text formats (.txt, .md, .csv, .json, .html, .rs, .py, etc.) are supported",
+                name
+            ));
+            continue;
+        }
+
         if let Ok(data) = field.bytes().await {
             let file_path = state.vault_path.join(&name);
             if tokio::fs::write(&file_path, &data[..]).await.is_ok() {
                 uploaded += 1;
 
                 if let Some(ref store) = state.vector_store {
-                    if let Ok(content) = String::from_utf8(data.to_vec()) {
-                        let cfg = state.rag_config.lock().unwrap().clone();
-                        let chunker = rag::TextChunker::new(cfg.chunk_size, cfg.chunk_overlap);
-                        let chunks = chunker.chunk(&content, &name);
-                        if !chunks.is_empty() {
-                            let mut embeddings = Vec::new();
-                            let mut success = true;
-                            for chunk in &chunks {
-                                match state.model_bridge.embed(&chunk.text).await {
-                                    Ok(emb) => embeddings.push(emb),
-                                    Err(e) => {
-                                        eprintln!(
-                                            "Embedding failed for chunk {} of {}: {}",
-                                            chunk.index, name, e
-                                        );
-                                        success = false;
-                                        break;
-                                    }
-                                }
+                    let content: String;
+                    let is_pdf = name.to_lowercase().ends_with(".pdf");
+                    if is_pdf {
+                        content = match pdf_extract::extract_text(&file_path) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                errors.push(format!("\"{}\": failed to extract text from PDF — {}", name, e));
+                                continue;
                             }
-                            if success && !embeddings.is_empty() {
-                                match store.add_chunks(&chunks, &embeddings) {
-                                    Ok(ids) => {
-                                        total_chunks += ids.len();
-                                            if let Some(ref kg) = state.knowledge_graph {
-                                            for chunk in &chunks {
-                                                let _ = kg.ingest(&chunk.text, &name);
-                                            }
-                                        }
-                                        state
-                                            .wal
-                                            .lock()
-                                            .unwrap()
-                                            .append(wal::WalEntry::Custom {
-                                                action: "rag_ingest".to_string(),
-                                                details: format!(
-                                                    "file={}, chunks={}",
-                                                    name,
-                                                    ids.len()
-                                                ),
-                                            })
-                                            .ok();
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to store chunks for {}: {}", name, e)
+                        };
+                    } else {
+                        content = match String::from_utf8(data.to_vec()) {
+                            Ok(c) => c,
+                            Err(_) => {
+                                errors.push(format!(
+                                    "\"{}\": file contains non-text binary data",
+                                    name
+                                ));
+                                continue;
+                            }
+                        };
+                    }
+                    let cfg = state.rag_config.lock().unwrap().clone();
+                    let chunker = rag::TextChunker::new(cfg.chunk_size, cfg.chunk_overlap);
+                    let chunks = chunker.chunk(&content, &name);
+                    if chunks.is_empty() {
+                        errors.push(format!("\"{}\": file produced 0 chunks after text extraction", name));
+                        continue;
+                    }
+                    let mut embeddings = Vec::new();
+                    let mut embed_ok = true;
+                    for chunk in &chunks {
+                        match state.model_bridge.embed(&chunk.text).await {
+                            Ok(emb) => embeddings.push(emb),
+                            Err(e) => {
+                                errors.push(format!(
+                                    "\"{}\": embedding failed — {}",
+                                    name, e
+                                ));
+                                embed_ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if embed_ok && !embeddings.is_empty() {
+                        match store.add_chunks(&chunks, &embeddings) {
+                            Ok(ids) => {
+                                total_chunks += ids.len();
+                                if let Some(ref kg) = state.knowledge_graph {
+                                    for chunk in &chunks {
+                                        let _ = kg.ingest(&chunk.text, &name);
                                     }
                                 }
+                                state
+                                    .wal
+                                    .lock()
+                                    .unwrap()
+                                    .append(wal::WalEntry::Custom {
+                                        action: "rag_ingest".to_string(),
+                                        details: format!("file={}, chunks={}", name, ids.len()),
+                                    })
+                                    .ok();
+                            }
+                            Err(e) => {
+                                errors.push(format!(
+                                    "\"{}\": failed to store chunks — {}",
+                                    name, e
+                                ));
                             }
                         }
                     }
@@ -589,12 +641,30 @@ async fn rag_ingest_handler(
         }
     }
 
-    axum::Json(serde_json::json!({
-        "status": "success", "files_uploaded": uploaded,
+    let status = if uploaded == 0 {
+        "error"
+    } else if total_chunks == 0 {
+        "warning"
+    } else {
+        "success"
+    };
+
+    let mut resp = serde_json::json!({
+        "status": status,
+        "files_uploaded": uploaded,
         "chunks_indexed": total_chunks,
-        "message": format!("Uploaded {} file(s) and indexed {} chunk(s)", uploaded, total_chunks)
-    }))
-    .into_response()
+        "message": if !errors.is_empty() {
+            errors.join("; ")
+        } else {
+            format!("Uploaded {} file(s) and indexed {} chunk(s)", uploaded, total_chunks)
+        }
+    });
+
+    if !errors.is_empty() {
+        resp["warnings"] = serde_json::json!(errors);
+    }
+
+    axum::Json(resp).into_response()
 }
 
 // ─── Bridge REST ──────────────────────────────────────────────────

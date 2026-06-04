@@ -157,7 +157,7 @@
         <div class="panel" id="panel-docs">
             <div class="stats-bar" id="stats-bar"></div>
             <h2 style="margin-bottom:16px">Upload Documents</h2>
-            <p style="color:var(--muted);margin-bottom:16px;font-size:14px">Supported: PDF, TXT, MD, HTML, JSON, CSV</p>
+            <p style="color:var(--muted);margin-bottom:16px;font-size:14px">Supported: PDF, TXT, MD, HTML, JSON, CSV, PY, RS, JS, TS, XML, YAML</p>
             <div class="upload-area" onclick="document.getElementById('file-input').click()">
                 <input type="file" id="file-input" multiple accept=".pdf,.txt,.md,.html,.json,.csv" />
                 <div class="icon">📄</div>
@@ -509,11 +509,14 @@
                 try {
                     const r = await fetch('/ingest/file', { method: 'POST', body: fd });
                     const data = await r.json();
-                    let summary = `✅ ${file.name} — ${data.chunks_created || '?'} chunks indexed in ${data.time_seconds || 0}s`;
-                    if (data.kg_stats && data.kg_stats.entities_added) {
-                        summary += `, ${data.kg_stats.entities_added} entities extracted`;
+                    let icon = data.status === 'error' ? '❌' : data.status === 'warning' ? '⚠️' : '✅';
+                    let color = data.status === 'error' ? 'var(--red)' : data.status === 'warning' ? 'var(--orange)' : 'var(--green)';
+                    let borderColor = data.status === 'error' ? 'var(--red)' : data.status === 'warning' ? 'var(--orange)' : 'var(--green)';
+                    let summary = `${icon} ${file.name} — ${data.message || ''}`;
+                    if (data.chunks_indexed > 0) {
+                        summary += ` (${data.chunks_indexed} chunks)`;
                     }
-                    result.innerHTML = `<div class="upload-result">${summary}</div>`;
+                    result.innerHTML = `<div class="upload-result" style="border-color:${borderColor};color:${color}">${summary}</div>`;
                 } catch (e) { result.innerHTML = `<div class="upload-result" style="border-color:var(--red);color:var(--red)">❌ ${file.name}: ${e.message}</div>`; }
             }
             fileInput.value = '';
