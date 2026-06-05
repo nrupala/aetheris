@@ -35,6 +35,10 @@ pub enum WalEntry {
     Snapshot {
         name: String,
     },
+    DevLog {
+        level: String,
+        message: String,
+    },
     Custom {
         action: String,
         details: String,
@@ -301,6 +305,11 @@ mod tests {
             name: "snap1".to_string(),
         })
         .unwrap();
+        wal.append(WalEntry::DevLog {
+            level: "INFO".to_string(),
+            message: "test log".to_string(),
+        })
+        .unwrap();
         wal.append(WalEntry::Custom {
             action: "a".to_string(),
             details: "d".to_string(),
@@ -308,7 +317,7 @@ mod tests {
         .unwrap();
 
         let count = wal.replay(|_| Ok(())).unwrap();
-        assert_eq!(count, 9);
+        assert_eq!(count, 10);
         std::fs::remove_dir_all(&dir).ok();
     }
 

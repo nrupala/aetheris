@@ -463,7 +463,6 @@
                     max_iterations: reasoningEnabled ? parseInt(document.getElementById('max-iterations').value) : undefined,
                     confidence_threshold: reasoningEnabled ? parseFloat(document.getElementById('confidence-threshold').value) : undefined,
                     top_k: parseInt(document.getElementById('top-k').value),
-                    threshold: parseFloat(document.getElementById('threshold').value),
                     include_history: true
                 };
                 const r = await fetch('/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

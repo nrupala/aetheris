@@ -37,13 +37,20 @@ use mcp::MCPServer;
 use proxy::OrchestratorProxy;
 use rag::VectorStore;
 
+#[derive(Debug, Clone)]
+pub struct LogEntry {
+    pub timestamp: u64,
+    pub level: String,
+    pub message: String,
+}
+
 pub struct AppState {
     pub vault_path: std::path::PathBuf,
     pub security_watcher: Arc<watcher::SecurityWatcher>,
     pub ai_url: String,
     pub opa_url: String,
     pub port_registry: serde_json::Value,
-    pub dev_logs: Mutex<Vec<String>>,
+    pub dev_logs: Mutex<Vec<LogEntry>>,
     pub wal: Arc<Mutex<wal::WriteAheadLog>>,
     pub model_bridge: Arc<dyn ModelBridge>,
     pub security_bridge: Arc<dyn SecurityBridge>,
@@ -116,10 +123,12 @@ async fn download_file(
 ) -> impl IntoResponse {
     let path = state.vault_path.join(&filename);
     if !path.starts_with(&state.vault_path) {
+        push_dev_log(&state, "WARN", &format!("File download DENIED: {}", filename));
         return (StatusCode::FORBIDDEN, "Access Denied").into_response();
     }
     match tokio::fs::File::open(&path).await {
         Ok(file) => {
+            push_dev_log(&state, "INFO", &format!("File download: {}", filename));
             let stream = tokio_util::io::ReaderStream::new(file);
             let body = Body::from_stream(stream);
             state
@@ -139,7 +148,10 @@ async fn download_file(
                 .body(body)
                 .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response())
         }
-        Err(_) => (StatusCode::NOT_FOUND, "File not found").into_response(),
+        Err(_) => {
+            push_dev_log(&state, "WARN", &format!("File download NOT FOUND: {}", filename));
+            (StatusCode::NOT_FOUND, "File not found").into_response()
+        }
     }
 }
 
@@ -166,6 +178,7 @@ async fn upload_file(
             }
         }
     }
+    push_dev_log(&state, "INFO", &format!("File upload: {} file(s) saved", uploaded));
     let body = if uploaded > 0 {
         serde_json::json!({"status": "uploaded", "count": uploaded})
     } else {
@@ -249,6 +262,7 @@ async fn rag_query_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    let start = std::time::Instant::now();
     let cfg = state.rag_config.lock().unwrap().clone();
     let query = payload.get("query").and_then(|v| v.as_str()).unwrap_or("");
     let use_reasoning = payload
@@ -356,7 +370,7 @@ async fn rag_query_handler(
         format!("Question: {}\n\nAnswer the question. Return ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\", \"confidence\"{}}}.", query, if use_reasoning { ", \"reasoning\"" } else { "" })
     };
 
-    match state.model_bridge.query(&prompt, &cfg.query_model).await {
+    match state.model_bridge.query_with_timeout(&prompt, &cfg.query_model, cfg.timeout_secs).await {
         Ok(response) => {
             let cleaned = response
                 .trim_start_matches("```json\n")
@@ -383,28 +397,35 @@ async fn rag_query_handler(
             } else {
                 sources_val
             };
+            let took_ms = start.elapsed().as_millis();
+            let answer_preview = parsed.get("answer").and_then(|v| v.as_str()).unwrap_or(&response);
+            let conf = parsed.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
+            push_dev_log(&state, "INFO", &format!("RAG query: \"{:.80}...\" → confidence {:.2}, {} chunks, {}ms", query, conf, context_chunks.as_ref().map(|c| c.len()).unwrap_or(0), took_ms));
             axum::Json(serde_json::json!({
                 "query": query,
-                "answer": parsed.get("answer").and_then(|v| v.as_str()).unwrap_or(&response),
+                "answer": answer_preview,
                 "model": cfg.query_model,
                 "sources": src,
-                "confidence": parsed.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
+                "confidence": conf,
                 "top_k": top_k,
                 "reasoning": parsed.get("reasoning").and_then(|v| v.as_str()).unwrap_or(""),
                 "chunks_searched": context_chunks.as_ref().map(|c| c.len()).unwrap_or(0),
                 "reranker_used": use_reranker,
                 "reranker_model": cfg.reranker_model,
-                "took_ms": 0,
+                "took_ms": took_ms,
             }))
             .into_response()
         }
-        Err(e) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": e, "query": query, "answer": "", "sources": [], "confidence": 0.0
-            })),
-        )
-            .into_response(),
+        Err(e) => {
+            push_dev_log(&state, "ERROR", &format!("RAG query failed: \"{:.80}...\" → {}", query, e));
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": e, "query": query, "answer": "", "sources": [], "confidence": 0.0
+                })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -472,6 +493,7 @@ async fn delete_source_handler(
     }
     match tokio::fs::remove_file(&path).await {
         Ok(_) => {
+            push_dev_log(&state, "INFO", &format!("File deleted: {}", name));
             state
                 .wal
                 .lock()
@@ -482,11 +504,14 @@ async fn delete_source_handler(
                 .ok();
             axum::Json(serde_json::json!({"status": "deleted", "name": name})).into_response()
         }
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"status": "not_found", "name": name})),
-        )
-            .into_response(),
+        Err(_) => {
+            push_dev_log(&state, "WARN", &format!("File delete NOT FOUND: {}", name));
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"status": "not_found", "name": name})),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -990,6 +1015,8 @@ async fn workflow_run_body(
         .iter()
         .all(|s| s["success"].as_bool().unwrap_or(false));
 
+    push_dev_log(&state, "INFO", &format!("Agent workflow: \"{:.80}...\" → {} steps, {}ms, success={}", task, steps_executed.len(), total_duration as u64, all_ok));
+
     Json(serde_json::json!({
         "task": task, "steps_executed": steps_executed,
         "total_steps": steps_executed.len(), "total_duration_ms": total_duration,
@@ -1200,16 +1227,51 @@ async fn audit_replay_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
 // ─── Dev ──────────────────────────────────────────────────────────
 
 async fn dev_logs_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs().to_string())
-        .unwrap_or_default();
     let logs = state.dev_logs.lock().unwrap();
     let entries: Vec<serde_json::Value> = logs
         .iter()
-        .map(|msg| serde_json::json!({"timestamp": ts, "level": "INFO", "message": msg}))
+        .map(|e| serde_json::json!({"timestamp": e.timestamp, "level": e.level, "message": e.message}))
         .collect();
     axum::Json(serde_json::json!({"logs": entries}))
+}
+
+fn push_dev_log(state: &AppState, level: &str, message: &str) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    {
+        let mut logs = state.dev_logs.lock().unwrap();
+        logs.push(LogEntry { timestamp: ts, level: level.to_string(), message: message.to_string() });
+    }
+    if let Ok(mut wal) = state.wal.lock() {
+        let _ = wal.append(wal::WalEntry::DevLog { level: level.to_string(), message: message.to_string() });
+    }
+}
+
+async fn dev_log_append_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let level = payload.get("level").and_then(|v| v.as_str()).unwrap_or("INFO");
+    let message = payload.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    if message.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "message is required"}))).into_response();
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let entry = LogEntry { timestamp: ts, level: level.to_string(), message: message.to_string() };
+    {
+        let mut logs = state.dev_logs.lock().unwrap();
+        logs.push(entry);
+    }
+    {
+        let mut wal = state.wal.lock().unwrap();
+        let _ = wal.append(wal::WalEntry::DevLog { level: level.to_string(), message: message.to_string() });
+    }
+    (StatusCode::OK, Json(serde_json::json!({"status": "ok", "timestamp": ts}))).into_response()
 }
 
 async fn dev_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -1644,14 +1706,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ai_url,
         opa_url,
         port_registry,
-        wal: wal_arc,
-        dev_logs: Mutex::new(vec![
-            "Aetheris Core v0.1.0 starting up".into(),
-            "Zero-Trust Mesh Engaged".into(),
-            format!("{} agents initialized", agent_vec.len()),
-            "Vector store online".into(),
-            "Listening on 0.0.0.0:8080".into(),
-        ]),
+        wal: wal_arc.clone(),
+        dev_logs: {
+            let mut logs: Vec<LogEntry> = Vec::new();
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or_default();
+            {
+                let wal = wal_arc.lock().unwrap();
+                let _ = wal.replay(|record| {
+                    if let wal::WalEntry::DevLog { level, message } = &record.entry {
+                        logs.push(LogEntry { timestamp: record.timestamp, level: level.clone(), message: message.clone() });
+                    }
+                    Ok(())
+                });
+            }
+            if logs.is_empty() {
+                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Aetheris Core v0.1.0 starting up".into() });
+                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Zero-Trust Mesh Engaged".into() });
+                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: format!("{} agents initialized", agent_vec.len()) });
+                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Vector store online".into() });
+                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Listening on 0.0.0.0:8080".into() });
+            }
+            Mutex::new(logs)
+        },
         model_bridge,
         security_bridge,
         a2a_gateway: Mutex::new(a2a_gateway),
@@ -1715,7 +1794,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/a2a/messages", get(a2a_messages_handler))
         .route("/audit/log", get(audit_log_handler))
         .route("/audit/replay", get(audit_replay_handler))
-        .route("/dev/logs", get(dev_logs_handler))
+        .route("/dev/logs", get(dev_logs_handler).post(dev_log_append_handler))
         .route("/dev/config", get(dev_config_handler))
         .route("/dev/metrics", get(dev_metrics_handler))
         .route("/sync/download/:filename", get(sync_download))

@@ -182,6 +182,42 @@ impl ModelBridge for OllamaBridge {
             .map(|s| s.to_string())
             .ok_or_else(|| "No content in response".to_string())
     }
+
+    async fn query_with_timeout(&self, prompt: &str, model: &str, timeout_secs: u64) -> Result<String, String> {
+        let model = if model.is_empty() {
+            &self.default_model
+        } else {
+            model
+        };
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        let payload = serde_json::json!({
+            "model": model,
+            "messages": [{
+                "role": "user",
+                "content": prompt
+            }],
+            "temperature": 0.1,
+            "stream": false
+        });
+        let res = crate::util::http_client_with_timeout(timeout)
+            .post(format!("{}/v1/chat/completions", self.url))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("AI request failed: {}", e))?;
+        let body: serde_json::Value = res
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        let choice = body["choices"].as_array().and_then(|arr| arr.first());
+        let msg = choice.and_then(|c| c.get("message")).unwrap_or(&serde_json::Value::Null);
+        msg["content"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .or_else(|| msg["reasoning_content"].as_str().filter(|s| !s.is_empty()))
+            .map(|s| s.to_string())
+            .ok_or_else(|| "No content in response".to_string())
+    }
 }
 
 pub struct OpaBridge {

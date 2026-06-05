@@ -20,6 +20,9 @@ pub trait AIBridge: AetherisBridge {
 #[async_trait]
 pub trait ModelBridge: AetherisBridge {
     async fn query(&self, prompt: &str, model: &str) -> Result<String, String>;
+    async fn query_with_timeout(&self, prompt: &str, model: &str, _timeout_secs: u64) -> Result<String, String> {
+        self.query(prompt, model).await
+    }
     async fn embed(&self, content: &str) -> Result<Vec<f32>, String>;
     async fn embed_and_index(&self, content: &str, file_id: &str) -> Result<(), String>;
     async fn list_models(&self) -> Result<Vec<String>, String>;

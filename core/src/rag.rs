@@ -12,6 +12,7 @@ pub struct RagConfig {
     pub embed_models: Vec<String>,
     pub reranker_model: String,
     pub reranker_enabled: bool,
+    pub timeout_secs: u64,
 }
 
 impl Default for RagConfig {
@@ -25,6 +26,7 @@ impl Default for RagConfig {
             embed_models: vec!["nomic-embed-text".to_string()],
             reranker_model: "bge-reranker-v2-m3".to_string(),
             reranker_enabled: true,
+            timeout_secs: 300,
         }
     }
 }

@@ -172,6 +172,7 @@ RUST_LOG=debug cargo test
 - **Help panels** ✅ — All 4 subdomain UIs have comprehensive help panels
 - **Reranker** ✅ — `rerank()` added to `ModelBridge` trait, implemented via Ollama `/api/rerank`, wired into `rag_query_handler` with `RagConfig.reranker_model`/`reranker_enabled`
 - **Model set 2026** ✅ — Updated defaults: `qwen3:8b` (primary), `deepseek-r1:8b` (deep reasoning), `bge-reranker-v2-m3` (reranker), `phi4-mini` (lightweight), `phi4-reasoning` (full reasoning)
+- **RAG pipeline live** ✅ — End-to-end RAG on `qwen2.5:1.5b` (CPU): embed → search → generate, 24 sources indexed, 145 chunks, working via localhost:8080 and nginx at rag.nrupalakolkar.com with `top_k=3`, 600s timeout, `took_ms` timing fixed
 
 ### In Progress
 - **WAL-backed dev logs** — logs endpoint initialized but not dynamically appended
