@@ -153,6 +153,7 @@ impl ModelBridge for OllamaBridge {
         } else {
             model
         };
+        let timeout = crate::util::model_timeout(model);
         let payload = serde_json::json!({
             "model": model,
             "messages": [{
@@ -162,7 +163,7 @@ impl ModelBridge for OllamaBridge {
             "temperature": 0.1,
             "stream": false
         });
-        let res = crate::util::http_client()
+        let res = crate::util::http_client_with_timeout(timeout)
             .post(format!("{}/v1/chat/completions", self.url))
             .json(&payload)
             .send()

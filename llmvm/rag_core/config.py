@@ -39,10 +39,6 @@ class RAGConfig:
     # Supported file extensions for directory ingest
     supported_extensions: list = field(default_factory=lambda: [".txt", ".md", ".py", ".rs", ".js", ".ts", ".html", ".css", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini"])
 
-    # Generation
-    temperature: float = float(os.environ.get("TEMPERATURE", "0.1"))
-    max_tokens: int = int(os.environ.get("MAX_TOKENS", "2048"))
-
     # System prompt
     system_prompt: str = os.environ.get(
         "SYSTEM_PROMPT",

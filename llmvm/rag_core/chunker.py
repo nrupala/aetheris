@@ -4,6 +4,7 @@ Uses tiktoken for accurate token counting.
 Fallback: character-based splitting if tiktoken unavailable.
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -18,16 +19,109 @@ class Chunk:
     metadata: dict = field(default_factory=dict)
 
 
+CODE_EXTENSIONS = frozenset({
+    ".rs", ".py", ".js", ".ts", ".go", ".java", ".c", ".cpp", ".h", ".hpp",
+    ".cc", ".cxx", ".kt", ".kts", ".swift", ".rb", ".php", ".lua", ".dart",
+    ".r", ".m", ".sh", ".bash", ".zsh", ".ada", ".adb", ".ads", ".sql",
+    ".toml", ".yaml", ".yml", ".json", ".css", ".scss", ".html", ".htm",
+    ".svelte", ".vue", ".erl", ".ex", ".exs", ".hs", ".lhs", ".clj",
+    ".cljs", ".zig", ".nim", ".cr", ".scala", ".ml", ".mli", ".fs", ".fsx",
+})
+
+
 class TextChunker:
     """
     Splits documents into overlapping chunks by token count.
     Respects paragraph and sentence boundaries when possible.
+    For code files, splits at definition boundaries (fn/class/struct/impl/trait/etc).
     """
 
     def __init__(self, chunk_size: int = 512, chunk_overlap: int = 64):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self._tokenizer = self._init_tokenizer()
+
+    @staticmethod
+    def is_code_source(source: str) -> bool:
+        _, ext = os.path.splitext(source.lower())
+        return ext in CODE_EXTENSIONS
+
+    @staticmethod
+    def is_definition_boundary(line: str) -> bool:
+        t = line.strip()
+        return (
+            t.startswith("fn ") or t.startswith("pub fn") or t.startswith("pub(crate) fn")
+            or t.startswith("pub(super) fn") or t.startswith("pub unsafe fn")
+            or t.startswith("unsafe fn") or t.startswith("def ")
+            or t.startswith("async def ")
+            or t.startswith("class ") or t.startswith("public class ")
+            or t.startswith("private class ") or t.startswith("protected class ")
+            or t.startswith("struct ") or t.startswith("pub struct ")
+            or t.startswith("impl ") or t.startswith("pub impl ") or t.startswith("trait ")
+            or t.startswith("pub trait ") or t.startswith("enum ") or t.startswith("pub enum ")
+            or t.startswith("interface ") or t.startswith("type ")
+            or t.startswith("func ") or t.startswith("function ")
+            or t.startswith("sub ") or t.startswith("public function ")
+            or t.startswith("private function ") or t.startswith("public static function ")
+            or t.startswith("async fn") or t.startswith("export function")
+            or t.startswith("export async function") or t.startswith("defn ")
+            or t.startswith("CREATE ") or t.startswith("ALTER ") or t.startswith("DROP ")
+            or t.startswith("SELECT ") or t.startswith("INSERT ") or t.startswith("UPDATE ")
+            or t.startswith("DELETE ") or t.startswith("pub type") or t.startswith("pub enum")
+            or t.startswith("macro_rules!")
+            or (t.startswith("#[") and "]" in t)
+        )
+
+    @staticmethod
+    def split_code_segments(text: str) -> list[str]:
+        lines = text.splitlines()
+        segments = []
+        start_line = 0
+        for i, line in enumerate(lines):
+            if i > 0 and TextChunker.is_definition_boundary(line):
+                segment = "\n".join(lines[start_line:i])
+                if segment.strip():
+                    segments.append(segment)
+                start_line = i
+        remaining = "\n".join(lines[start_line:])
+        if remaining.strip():
+            segments.append(remaining)
+        if not segments:
+            segments = [text]
+        return segments
+
+    def chunk_code(self, text: str, source: str) -> list[Chunk]:
+        segments = self.split_code_segments(text)
+        chunks = []
+        current = ""
+        current_tokens = 0
+        half_size = self.chunk_size * 2
+
+        for segment in segments:
+            seg_tokens = self._count_tokens(segment)
+            if current_tokens + seg_tokens <= half_size:
+                current += ("\n\n" if current else "") + segment
+                current_tokens += seg_tokens
+                continue
+            if current:
+                chunks.append(Chunk(
+                    text=current,
+                    index=len(chunks),
+                    source=source,
+                    token_count=current_tokens,
+                ))
+            current = segment
+            current_tokens = seg_tokens
+
+        if current:
+            chunks.append(Chunk(
+                text=current,
+                index=len(chunks),
+                source=source,
+                token_count=current_tokens,
+            ))
+
+        return chunks
 
     def _init_tokenizer(self):
         """Try tiktoken, fallback to None (char-based counting)."""
@@ -61,10 +155,14 @@ class TextChunker:
     def chunk(self, text: str, source: str = "unknown") -> List[Chunk]:
         """
         Split text into overlapping chunks respecting semantic boundaries.
-        Priority: paragraphs > sentences > hard token split.
+        For code files, splits at definition boundaries (fn/class/struct/impl/trait/etc).
+        For prose, priority: paragraphs > sentences > hard token split.
         """
         if not text.strip():
             return []
+
+        if self.is_code_source(source):
+            return self.chunk_code(text, source)
 
         chunks = []
         paragraphs = self._split_by_paragraphs(text)

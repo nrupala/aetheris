@@ -35,7 +35,7 @@ services:
     image: ollama/ollama:latest
     container_name: aetheris_ollama
     ports:
-      - "11434:11434"
+      - "11435:11434"
     volumes:
       - ollama_models:/root/.ollama
       - /models:/models:ro
@@ -54,6 +54,8 @@ services:
   model-init:
     image: ollama/ollama:latest
     container_name: aetheris_model_init
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ollama_models:/root/.ollama
       - /models:/models:ro

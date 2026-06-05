@@ -23,8 +23,8 @@ impl Default for RagConfig {
             query_model: "phi4-mini".to_string(),
             reasoning_enabled: false,
             embed_models: vec!["nomic-embed-text".to_string()],
-            reranker_model: String::new(),
-            reranker_enabled: false,
+            reranker_model: "bge-reranker-v2-m3".to_string(),
+            reranker_enabled: true,
         }
     }
 }
@@ -113,6 +113,75 @@ impl TextChunker {
             .collect()
     }
 
+    fn is_code_source(source: &str) -> bool {
+        let lower = source.to_lowercase();
+        lower.ends_with(".rs") || lower.ends_with(".py") || lower.ends_with(".js")
+        || lower.ends_with(".ts") || lower.ends_with(".go") || lower.ends_with(".java")
+        || lower.ends_with(".c") || lower.ends_with(".cpp") || lower.ends_with(".h")
+        || lower.ends_with(".hpp") || lower.ends_with(".cc") || lower.ends_with(".cxx")
+        || lower.ends_with(".kt") || lower.ends_with(".kts") || lower.ends_with(".swift")
+        || lower.ends_with(".rb") || lower.ends_with(".php") || lower.ends_with(".lua")
+        || lower.ends_with(".dart") || lower.ends_with(".r") || lower.ends_with(".m")
+        || lower.ends_with(".sh") || lower.ends_with(".bash") || lower.ends_with(".zsh")
+        || lower.ends_with(".ada") || lower.ends_with(".adb") || lower.ends_with(".ads")
+        || lower.ends_with(".sql") || lower.ends_with(".toml") || lower.ends_with(".yaml")
+        || lower.ends_with(".yml") || lower.ends_with(".json") || lower.ends_with(".css")
+        || lower.ends_with(".scss") || lower.ends_with(".html") || lower.ends_with(".htm")
+        || lower.ends_with(".svelte") || lower.ends_with(".vue") || lower.ends_with(".erl")
+        || lower.ends_with(".ex") || lower.ends_with(".exs") || lower.ends_with(".hs")
+        || lower.ends_with(".lhs") || lower.ends_with(".clj") || lower.ends_with(".cljs")
+        || lower.ends_with(".zig") || lower.ends_with(".nim") || lower.ends_with(".cr")
+        || lower.ends_with(".scala") || lower.ends_with(".ml") || lower.ends_with(".mli")
+        || lower.ends_with(".fs") || lower.ends_with(".fsx")
+    }
+
+    fn is_definition_boundary(line: &str) -> bool {
+        let t = line.trim();
+        t.starts_with("fn ") || t.starts_with("pub fn") || t.starts_with("pub(crate) fn")
+        || t.starts_with("pub(super) fn") || t.starts_with("pub unsafe fn")
+        || t.starts_with("unsafe fn") || t.starts_with("def ")
+            || t.starts_with("async def ")
+        || t.starts_with("class ") || t.starts_with("public class ")
+        || t.starts_with("private class ") || t.starts_with("protected class ")
+        || t.starts_with("struct ") || t.starts_with("pub struct ")
+        || t.starts_with("impl ") || t.starts_with("pub impl ") || t.starts_with("trait ")
+        || t.starts_with("pub trait ") || t.starts_with("enum ") || t.starts_with("pub enum ")
+        || t.starts_with("interface ") || t.starts_with("type ")
+        || t.starts_with("func ") || t.starts_with("function ")
+        || t.starts_with("sub ") || t.starts_with("public function ")
+        || t.starts_with("private function ") || t.starts_with("public static function ")
+        || t.starts_with("async fn") || t.starts_with("export function")
+        || t.starts_with("export async function") || t.starts_with("defn ")
+        || t.starts_with("CREATE ") || t.starts_with("ALTER ") || t.starts_with("DROP ")
+        || t.starts_with("SELECT ") || t.starts_with("INSERT ") || t.starts_with("UPDATE ")
+        || t.starts_with("DELETE ") || t.starts_with("pub type") || t.starts_with("pub enum")
+        || t.starts_with("macro_rules!") || t.starts_with("#[derive")
+        || t.starts_with("#[") && t.contains("]")
+    }
+
+    fn split_code_segments(text: &str) -> Vec<(usize, String)> {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut segments: Vec<(usize, String)> = Vec::new();
+        let mut start_line = 0usize;
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 && Self::is_definition_boundary(line) {
+                let segment = lines[start_line..i].join("\n");
+                if !segment.trim().is_empty() {
+                    segments.push((start_line, segment));
+                }
+                start_line = i;
+            }
+        }
+        let remaining = lines[start_line..].join("\n");
+        if !remaining.trim().is_empty() {
+            segments.push((start_line, remaining));
+        }
+        if segments.is_empty() {
+            segments.push((0, text.to_string()));
+        }
+        segments
+    }
+
     fn split_by_sentences(text: &str) -> Vec<String> {
         let mut sentences = Vec::new();
         let mut current = String::new();
@@ -136,6 +205,10 @@ impl TextChunker {
     pub fn chunk(&self, text: &str, source: &str) -> Vec<Chunk> {
         if text.trim().is_empty() {
             return vec![];
+        }
+
+        if Self::is_code_source(source) {
+            return self.chunk_code(text, source);
         }
 
         let mut chunks: Vec<Chunk> = Vec::new();
@@ -266,6 +339,47 @@ impl TextChunker {
         if !trimmed.is_empty() {
             chunks.push(Chunk {
                 text: trimmed,
+                index: chunks.len(),
+                source: source.to_string(),
+                token_count: current_tokens,
+            });
+        }
+
+        chunks
+    }
+
+    fn chunk_code(&self, text: &str, source: &str) -> Vec<Chunk> {
+        let segments = Self::split_code_segments(text);
+        let mut chunks: Vec<Chunk> = Vec::new();
+        let mut current = String::new();
+        let mut current_tokens = 0;
+        let half_size = self.chunk_size * 2;
+
+        for (_line, segment) in &segments {
+            let seg_tokens = Self::count_tokens(segment);
+            if current_tokens + seg_tokens <= half_size {
+                if !current.is_empty() {
+                    current.push_str("\n\n");
+                }
+                current.push_str(segment);
+                current_tokens += seg_tokens;
+                continue;
+            }
+            if !current.is_empty() {
+                chunks.push(Chunk {
+                    text: current.clone(),
+                    index: chunks.len(),
+                    source: source.to_string(),
+                    token_count: current_tokens,
+                });
+            }
+            current = segment.clone();
+            current_tokens = seg_tokens;
+        }
+
+        if !current.is_empty() {
+            chunks.push(Chunk {
+                text: current,
                 index: chunks.len(),
                 source: source.to_string(),
                 token_count: current_tokens,

@@ -327,9 +327,29 @@ async fn rag_query_handler(
         } else {
             ""
         };
+        let code_hint = if query.contains("fn ") || query.contains("function ")
+            || query.contains("class ") || query.contains("impl ")
+            || query.contains("struct ") || query.contains("trait ")
+            || query.contains("enum ") || query.contains("def ")
+            || query.contains("pub ") || query.contains("unsafe ")
+            || query.contains("mut ") || query.contains("async ")
+            || query.contains(".await") || query.contains("-> ")
+            || query.contains("=>") || query.contains("::")
+            || query.contains("&self") || query.contains("&mut self")
+            || query.contains("Result<") || query.contains("Option<")
+            || query.contains("let ") || query.contains("match ")
+            || query.contains("if let ") || query.contains("for ")
+            || query.contains("while ") || query.contains("loop ")
+            || query.contains("Vec<") || query.contains("HashMap<")
+            || query.contains("String") || query.contains("&str")
+        {
+            " The context contains code files. Reference specific functions, types, and file paths when answering. Use code snippets in your answer when relevant."
+        } else {
+            ""
+        };
         format!(
-            "Context:\n{}\n\nQuestion: {}\n\nAnswer based on the context above.{}\n\nReturn ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\" (list of source filenames), \"confidence\" (0.0-1.0){}}}.",
-            context, query, reasoning,
+            "Context:\n{}\n\nQuestion: {}\n\nAnswer based on the context above.{}{}\n\nReturn ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\" (list of source filenames), \"confidence\" (0.0-1.0){}}}.",
+            context, query, reasoning, code_hint,
             if use_reasoning { ", \"reasoning\" (string)" } else { "" }
         )
     } else {

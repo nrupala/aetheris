@@ -54,3 +54,7 @@ tmp_*.json
 *.err.txt
 * snapshottinglogic*
 *peer tracker*
+
+# Test artifacts
+test_doc.txt
+anchored_summary.md
