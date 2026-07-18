@@ -1,0 +1,16 @@
+[Unit]
+Description=Town Sovereign MCP server (Ollama-backed sovereign_search)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_RUN_USER
+WorkingDirectory=/opt/town-mcp
+EnvironmentFile=/opt/town-mcp/.env
+ExecStart=/opt/town-mcp/.venv/bin/python -m uvicorn src.server:app --host ${HOST} --port ${PORT}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
