@@ -268,7 +268,7 @@ impl KnowledgeGraph {
 
         let mut degree: Vec<(String, usize)> =
             graph.into_iter().map(|(k, v)| (k, v.len())).collect();
-        degree.sort_by(|a, b| b.1.cmp(&a.1));
+        degree.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         let central_nodes: Vec<String> = degree.into_iter().take(10).map(|(n, _)| n).collect();
 
         Ok(KGStats {

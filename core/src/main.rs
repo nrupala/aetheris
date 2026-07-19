@@ -691,10 +691,9 @@ async fn rag_ingest_handler(
                 uploaded += 1;
 
                 if let Some(ref store) = state.vector_store {
-                    let content: String;
                     let is_pdf = name.to_lowercase().ends_with(".pdf");
-                    if is_pdf {
-                        content = match pdf_extract::extract_text(&file_path) {
+                    let content: String = if is_pdf {
+                        match pdf_extract::extract_text(&file_path) {
                             Ok(t) => t,
                             Err(e) => {
                                 errors.push(format!(
@@ -703,9 +702,9 @@ async fn rag_ingest_handler(
                                 ));
                                 continue;
                             }
-                        };
+                        }
                     } else {
-                        content = match String::from_utf8(data.to_vec()) {
+                        match String::from_utf8(data.to_vec()) {
                             Ok(c) => c,
                             Err(_) => {
                                 errors.push(format!(
@@ -714,8 +713,8 @@ async fn rag_ingest_handler(
                                 ));
                                 continue;
                             }
-                        };
-                    }
+                        }
+                    };
                     let cfg = state.rag_config.lock().unwrap().clone();
                     let chunker = rag::TextChunker::new(cfg.chunk_size, cfg.chunk_overlap);
                     let chunks = chunker.chunk(&content, &name);
