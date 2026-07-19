@@ -68,7 +68,9 @@ impl AetherisConnector {
 
         if status.is_success() {
             let choice = body["choices"].as_array().and_then(|arr| arr.first());
-            let msg = choice.and_then(|c| c.get("message")).unwrap_or(&serde_json::Value::Null);
+            let msg = choice
+                .and_then(|c| c.get("message"))
+                .unwrap_or(&serde_json::Value::Null);
             let content = msg["content"]
                 .as_str()
                 .filter(|s| !s.is_empty())
