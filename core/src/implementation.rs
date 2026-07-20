@@ -174,7 +174,9 @@ impl ModelBridge for OllamaBridge {
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
         let choice = body["choices"].as_array().and_then(|arr| arr.first());
-        let msg = choice.and_then(|c| c.get("message")).unwrap_or(&serde_json::Value::Null);
+        let msg = choice
+            .and_then(|c| c.get("message"))
+            .unwrap_or(&serde_json::Value::Null);
         msg["content"]
             .as_str()
             .filter(|s| !s.is_empty())
@@ -183,7 +185,12 @@ impl ModelBridge for OllamaBridge {
             .ok_or_else(|| "No content in response".to_string())
     }
 
-    async fn query_with_timeout(&self, prompt: &str, model: &str, timeout_secs: u64) -> Result<String, String> {
+    async fn query_with_timeout(
+        &self,
+        prompt: &str,
+        model: &str,
+        timeout_secs: u64,
+    ) -> Result<String, String> {
         let model = if model.is_empty() {
             &self.default_model
         } else {
@@ -210,7 +217,9 @@ impl ModelBridge for OllamaBridge {
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
         let choice = body["choices"].as_array().and_then(|arr| arr.first());
-        let msg = choice.and_then(|c| c.get("message")).unwrap_or(&serde_json::Value::Null);
+        let msg = choice
+            .and_then(|c| c.get("message"))
+            .unwrap_or(&serde_json::Value::Null);
         msg["content"]
             .as_str()
             .filter(|s| !s.is_empty())

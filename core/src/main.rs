@@ -123,7 +123,11 @@ async fn download_file(
 ) -> impl IntoResponse {
     let path = state.vault_path.join(&filename);
     if !path.starts_with(&state.vault_path) {
-        push_dev_log(&state, "WARN", &format!("File download DENIED: {}", filename));
+        push_dev_log(
+            &state,
+            "WARN",
+            &format!("File download DENIED: {}", filename),
+        );
         return (StatusCode::FORBIDDEN, "Access Denied").into_response();
     }
     match tokio::fs::File::open(&path).await {
@@ -149,7 +153,11 @@ async fn download_file(
                 .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response())
         }
         Err(_) => {
-            push_dev_log(&state, "WARN", &format!("File download NOT FOUND: {}", filename));
+            push_dev_log(
+                &state,
+                "WARN",
+                &format!("File download NOT FOUND: {}", filename),
+            );
             (StatusCode::NOT_FOUND, "File not found").into_response()
         }
     }
@@ -178,7 +186,11 @@ async fn upload_file(
             }
         }
     }
-    push_dev_log(&state, "INFO", &format!("File upload: {} file(s) saved", uploaded));
+    push_dev_log(
+        &state,
+        "INFO",
+        &format!("File upload: {} file(s) saved", uploaded),
+    );
     let body = if uploaded > 0 {
         serde_json::json!({"status": "uploaded", "count": uploaded})
     } else {
@@ -216,7 +228,9 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         serde_json::json!({"name": "knowledge_graph", "status": if kg_ok { "running" } else { "unavailable" }, "port": 0}),
     ];
     if state.orchestrator_proxy.is_some() {
-        services.push(serde_json::json!({"name": "orchestrator_proxy", "status": "running", "port": 9090}));
+        services.push(
+            serde_json::json!({"name": "orchestrator_proxy", "status": "running", "port": 9090}),
+        );
     }
     axum::Json(serde_json::json!({
         "status": "ok",
@@ -341,21 +355,36 @@ async fn rag_query_handler(
         } else {
             ""
         };
-        let code_hint = if query.contains("fn ") || query.contains("function ")
-            || query.contains("class ") || query.contains("impl ")
-            || query.contains("struct ") || query.contains("trait ")
-            || query.contains("enum ") || query.contains("def ")
-            || query.contains("pub ") || query.contains("unsafe ")
-            || query.contains("mut ") || query.contains("async ")
-            || query.contains(".await") || query.contains("-> ")
-            || query.contains("=>") || query.contains("::")
-            || query.contains("&self") || query.contains("&mut self")
-            || query.contains("Result<") || query.contains("Option<")
-            || query.contains("let ") || query.contains("match ")
-            || query.contains("if let ") || query.contains("for ")
-            || query.contains("while ") || query.contains("loop ")
-            || query.contains("Vec<") || query.contains("HashMap<")
-            || query.contains("String") || query.contains("&str")
+        let code_hint = if query.contains("fn ")
+            || query.contains("function ")
+            || query.contains("class ")
+            || query.contains("impl ")
+            || query.contains("struct ")
+            || query.contains("trait ")
+            || query.contains("enum ")
+            || query.contains("def ")
+            || query.contains("pub ")
+            || query.contains("unsafe ")
+            || query.contains("mut ")
+            || query.contains("async ")
+            || query.contains(".await")
+            || query.contains("-> ")
+            || query.contains("=>")
+            || query.contains("::")
+            || query.contains("&self")
+            || query.contains("&mut self")
+            || query.contains("Result<")
+            || query.contains("Option<")
+            || query.contains("let ")
+            || query.contains("match ")
+            || query.contains("if let ")
+            || query.contains("for ")
+            || query.contains("while ")
+            || query.contains("loop ")
+            || query.contains("Vec<")
+            || query.contains("HashMap<")
+            || query.contains("String")
+            || query.contains("&str")
         {
             " The context contains code files. Reference specific functions, types, and file paths when answering. Use code snippets in your answer when relevant."
         } else {
@@ -370,7 +399,11 @@ async fn rag_query_handler(
         format!("Question: {}\n\nAnswer the question. Return ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\", \"confidence\"{}}}.", query, if use_reasoning { ", \"reasoning\"" } else { "" })
     };
 
-    match state.model_bridge.query_with_timeout(&prompt, &cfg.query_model, cfg.timeout_secs).await {
+    match state
+        .model_bridge
+        .query_with_timeout(&prompt, &cfg.query_model, cfg.timeout_secs)
+        .await
+    {
         Ok(response) => {
             let cleaned = response
                 .trim_start_matches("```json\n")
@@ -398,9 +431,25 @@ async fn rag_query_handler(
                 sources_val
             };
             let took_ms = start.elapsed().as_millis();
-            let answer_preview = parsed.get("answer").and_then(|v| v.as_str()).unwrap_or(&response);
-            let conf = parsed.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
-            push_dev_log(&state, "INFO", &format!("RAG query: \"{:.80}...\" → confidence {:.2}, {} chunks, {}ms", query, conf, context_chunks.as_ref().map(|c| c.len()).unwrap_or(0), took_ms));
+            let answer_preview = parsed
+                .get("answer")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&response);
+            let conf = parsed
+                .get("confidence")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.5);
+            push_dev_log(
+                &state,
+                "INFO",
+                &format!(
+                    "RAG query: \"{:.80}...\" → confidence {:.2}, {} chunks, {}ms",
+                    query,
+                    conf,
+                    context_chunks.as_ref().map(|c| c.len()).unwrap_or(0),
+                    took_ms
+                ),
+            );
             axum::Json(serde_json::json!({
                 "query": query,
                 "answer": answer_preview,
@@ -417,7 +466,11 @@ async fn rag_query_handler(
             .into_response()
         }
         Err(e) => {
-            push_dev_log(&state, "ERROR", &format!("RAG query failed: \"{:.80}...\" → {}", query, e));
+            push_dev_log(
+                &state,
+                "ERROR",
+                &format!("RAG query failed: \"{:.80}...\" → {}", query, e),
+            );
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
@@ -464,7 +517,10 @@ async fn rag_sources_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
                         })
                     {
                         if let Ok(meta) = entry.metadata().await {
-                            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                            let name = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
                             sources.push(serde_json::json!({
                                 "source": name,
                                 "size": meta.len(),
@@ -635,18 +691,20 @@ async fn rag_ingest_handler(
                 uploaded += 1;
 
                 if let Some(ref store) = state.vector_store {
-                    let content: String;
                     let is_pdf = name.to_lowercase().ends_with(".pdf");
-                    if is_pdf {
-                        content = match pdf_extract::extract_text(&file_path) {
+                    let content: String = if is_pdf {
+                        match pdf_extract::extract_text(&file_path) {
                             Ok(t) => t,
                             Err(e) => {
-                                errors.push(format!("\"{}\": failed to extract text from PDF — {}", name, e));
+                                errors.push(format!(
+                                    "\"{}\": failed to extract text from PDF — {}",
+                                    name, e
+                                ));
                                 continue;
                             }
-                        };
+                        }
                     } else {
-                        content = match String::from_utf8(data.to_vec()) {
+                        match String::from_utf8(data.to_vec()) {
                             Ok(c) => c,
                             Err(_) => {
                                 errors.push(format!(
@@ -655,13 +713,16 @@ async fn rag_ingest_handler(
                                 ));
                                 continue;
                             }
-                        };
-                    }
+                        }
+                    };
                     let cfg = state.rag_config.lock().unwrap().clone();
                     let chunker = rag::TextChunker::new(cfg.chunk_size, cfg.chunk_overlap);
                     let chunks = chunker.chunk(&content, &name);
                     if chunks.is_empty() {
-                        errors.push(format!("\"{}\": file produced 0 chunks after text extraction", name));
+                        errors.push(format!(
+                            "\"{}\": file produced 0 chunks after text extraction",
+                            name
+                        ));
                         continue;
                     }
                     let mut embeddings = Vec::new();
@@ -670,10 +731,7 @@ async fn rag_ingest_handler(
                         match state.model_bridge.embed(&chunk.text).await {
                             Ok(emb) => embeddings.push(emb),
                             Err(e) => {
-                                errors.push(format!(
-                                    "\"{}\": embedding failed — {}",
-                                    name, e
-                                ));
+                                errors.push(format!("\"{}\": embedding failed — {}", name, e));
                                 embed_ok = false;
                                 break;
                             }
@@ -699,10 +757,8 @@ async fn rag_ingest_handler(
                                     .ok();
                             }
                             Err(e) => {
-                                errors.push(format!(
-                                    "\"{}\": failed to store chunks — {}",
-                                    name, e
-                                ));
+                                errors
+                                    .push(format!("\"{}\": failed to store chunks — {}", name, e));
                             }
                         }
                     }
@@ -1015,7 +1071,17 @@ async fn workflow_run_body(
         .iter()
         .all(|s| s["success"].as_bool().unwrap_or(false));
 
-    push_dev_log(&state, "INFO", &format!("Agent workflow: \"{:.80}...\" → {} steps, {}ms, success={}", task, steps_executed.len(), total_duration as u64, all_ok));
+    push_dev_log(
+        &state,
+        "INFO",
+        &format!(
+            "Agent workflow: \"{:.80}...\" → {} steps, {}ms, success={}",
+            task,
+            steps_executed.len(),
+            total_duration as u64,
+            all_ok
+        ),
+    );
 
     Json(serde_json::json!({
         "task": task, "steps_executed": steps_executed,
@@ -1242,10 +1308,17 @@ fn push_dev_log(state: &AppState, level: &str, message: &str) {
         .unwrap_or_default();
     {
         let mut logs = state.dev_logs.lock().unwrap();
-        logs.push(LogEntry { timestamp: ts, level: level.to_string(), message: message.to_string() });
+        logs.push(LogEntry {
+            timestamp: ts,
+            level: level.to_string(),
+            message: message.to_string(),
+        });
     }
     if let Ok(mut wal) = state.wal.lock() {
-        let _ = wal.append(wal::WalEntry::DevLog { level: level.to_string(), message: message.to_string() });
+        let _ = wal.append(wal::WalEntry::DevLog {
+            level: level.to_string(),
+            message: message.to_string(),
+        });
     }
 }
 
@@ -1253,25 +1326,46 @@ async fn dev_log_append_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let level = payload.get("level").and_then(|v| v.as_str()).unwrap_or("INFO");
-    let message = payload.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    let level = payload
+        .get("level")
+        .and_then(|v| v.as_str())
+        .unwrap_or("INFO");
+    let message = payload
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if message.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "message is required"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "message is required"})),
+        )
+            .into_response();
     }
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or_default();
-    let entry = LogEntry { timestamp: ts, level: level.to_string(), message: message.to_string() };
+    let entry = LogEntry {
+        timestamp: ts,
+        level: level.to_string(),
+        message: message.to_string(),
+    };
     {
         let mut logs = state.dev_logs.lock().unwrap();
         logs.push(entry);
     }
     {
         let mut wal = state.wal.lock().unwrap();
-        let _ = wal.append(wal::WalEntry::DevLog { level: level.to_string(), message: message.to_string() });
+        let _ = wal.append(wal::WalEntry::DevLog {
+            level: level.to_string(),
+            message: message.to_string(),
+        });
     }
-    (StatusCode::OK, Json(serde_json::json!({"status": "ok", "timestamp": ts}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status": "ok", "timestamp": ts})),
+    )
+        .into_response()
 }
 
 async fn dev_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -1296,14 +1390,17 @@ async fn dev_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResp
 
 async fn dev_metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let uptime_hours = state.start_time.elapsed().as_secs_f64() / 3600.0;
-    let mut containers = vec![
-        serde_json::json!({"name": "aetheris_core", "status": "running", "port": 8080}),
-    ];
+    let mut containers =
+        vec![serde_json::json!({"name": "aetheris_core", "status": "running", "port": 8080})];
     if state.vector_store.is_some() {
-        containers.push(serde_json::json!({"name": "aetheris_vector_store", "status": "running", "port": 0}));
+        containers.push(
+            serde_json::json!({"name": "aetheris_vector_store", "status": "running", "port": 0}),
+        );
     }
     if state.knowledge_graph.is_some() {
-        containers.push(serde_json::json!({"name": "aetheris_knowledge_graph", "status": "running", "port": 0}));
+        containers.push(
+            serde_json::json!({"name": "aetheris_knowledge_graph", "status": "running", "port": 0}),
+        );
     }
     axum::Json(serde_json::json!({
         "containers": containers,
@@ -1717,17 +1814,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let wal = wal_arc.lock().unwrap();
                 let _ = wal.replay(|record| {
                     if let wal::WalEntry::DevLog { level, message } = &record.entry {
-                        logs.push(LogEntry { timestamp: record.timestamp, level: level.clone(), message: message.clone() });
+                        logs.push(LogEntry {
+                            timestamp: record.timestamp,
+                            level: level.clone(),
+                            message: message.clone(),
+                        });
                     }
                     Ok(())
                 });
             }
             if logs.is_empty() {
-                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Aetheris Core v0.1.0 starting up".into() });
-                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Zero-Trust Mesh Engaged".into() });
-                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: format!("{} agents initialized", agent_vec.len()) });
-                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Vector store online".into() });
-                logs.push(LogEntry { timestamp: ts, level: "INFO".into(), message: "Listening on 0.0.0.0:8080".into() });
+                logs.push(LogEntry {
+                    timestamp: ts,
+                    level: "INFO".into(),
+                    message: "Aetheris Core v0.1.0 starting up".into(),
+                });
+                logs.push(LogEntry {
+                    timestamp: ts,
+                    level: "INFO".into(),
+                    message: "Zero-Trust Mesh Engaged".into(),
+                });
+                logs.push(LogEntry {
+                    timestamp: ts,
+                    level: "INFO".into(),
+                    message: format!("{} agents initialized", agent_vec.len()),
+                });
+                logs.push(LogEntry {
+                    timestamp: ts,
+                    level: "INFO".into(),
+                    message: "Vector store online".into(),
+                });
+                logs.push(LogEntry {
+                    timestamp: ts,
+                    level: "INFO".into(),
+                    message: "Listening on 0.0.0.0:8080".into(),
+                });
             }
             Mutex::new(logs)
         },
@@ -1794,7 +1915,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/a2a/messages", get(a2a_messages_handler))
         .route("/audit/log", get(audit_log_handler))
         .route("/audit/replay", get(audit_replay_handler))
-        .route("/dev/logs", get(dev_logs_handler).post(dev_log_append_handler))
+        .route(
+            "/dev/logs",
+            get(dev_logs_handler).post(dev_log_append_handler),
+        )
         .route("/dev/config", get(dev_config_handler))
         .route("/dev/metrics", get(dev_metrics_handler))
         .route("/sync/download/:filename", get(sync_download))
@@ -1836,7 +1960,8 @@ async fn shutdown_signal() {
     let terminate = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .expect("failed to install signal handler")
-            .recv().await;
+            .recv()
+            .await;
     };
 
     #[cfg(not(unix))]

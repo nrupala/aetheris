@@ -99,7 +99,13 @@ impl TextChunker {
     }
 
     fn char_trim_end(s: &str, n: usize) -> String {
-        s.chars().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect()
+        s.chars()
+            .rev()
+            .take(n)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     }
 
     fn char_trim_start(s: &str, n: usize) -> String {
@@ -117,48 +123,107 @@ impl TextChunker {
 
     fn is_code_source(source: &str) -> bool {
         let lower = source.to_lowercase();
-        lower.ends_with(".rs") || lower.ends_with(".py") || lower.ends_with(".js")
-        || lower.ends_with(".ts") || lower.ends_with(".go") || lower.ends_with(".java")
-        || lower.ends_with(".c") || lower.ends_with(".cpp") || lower.ends_with(".h")
-        || lower.ends_with(".hpp") || lower.ends_with(".cc") || lower.ends_with(".cxx")
-        || lower.ends_with(".kt") || lower.ends_with(".kts") || lower.ends_with(".swift")
-        || lower.ends_with(".rb") || lower.ends_with(".php") || lower.ends_with(".lua")
-        || lower.ends_with(".dart") || lower.ends_with(".r") || lower.ends_with(".m")
-        || lower.ends_with(".sh") || lower.ends_with(".bash") || lower.ends_with(".zsh")
-        || lower.ends_with(".ada") || lower.ends_with(".adb") || lower.ends_with(".ads")
-        || lower.ends_with(".sql") || lower.ends_with(".toml") || lower.ends_with(".yaml")
-        || lower.ends_with(".yml") || lower.ends_with(".json") || lower.ends_with(".css")
-        || lower.ends_with(".scss") || lower.ends_with(".html") || lower.ends_with(".htm")
-        || lower.ends_with(".svelte") || lower.ends_with(".vue") || lower.ends_with(".erl")
-        || lower.ends_with(".ex") || lower.ends_with(".exs") || lower.ends_with(".hs")
-        || lower.ends_with(".lhs") || lower.ends_with(".clj") || lower.ends_with(".cljs")
-        || lower.ends_with(".zig") || lower.ends_with(".nim") || lower.ends_with(".cr")
-        || lower.ends_with(".scala") || lower.ends_with(".ml") || lower.ends_with(".mli")
-        || lower.ends_with(".fs") || lower.ends_with(".fsx")
+        lower.ends_with(".rs")
+            || lower.ends_with(".py")
+            || lower.ends_with(".js")
+            || lower.ends_with(".ts")
+            || lower.ends_with(".go")
+            || lower.ends_with(".java")
+            || lower.ends_with(".c")
+            || lower.ends_with(".cpp")
+            || lower.ends_with(".h")
+            || lower.ends_with(".hpp")
+            || lower.ends_with(".cc")
+            || lower.ends_with(".cxx")
+            || lower.ends_with(".kt")
+            || lower.ends_with(".kts")
+            || lower.ends_with(".swift")
+            || lower.ends_with(".rb")
+            || lower.ends_with(".php")
+            || lower.ends_with(".lua")
+            || lower.ends_with(".dart")
+            || lower.ends_with(".r")
+            || lower.ends_with(".m")
+            || lower.ends_with(".sh")
+            || lower.ends_with(".bash")
+            || lower.ends_with(".zsh")
+            || lower.ends_with(".ada")
+            || lower.ends_with(".adb")
+            || lower.ends_with(".ads")
+            || lower.ends_with(".sql")
+            || lower.ends_with(".toml")
+            || lower.ends_with(".yaml")
+            || lower.ends_with(".yml")
+            || lower.ends_with(".json")
+            || lower.ends_with(".css")
+            || lower.ends_with(".scss")
+            || lower.ends_with(".html")
+            || lower.ends_with(".htm")
+            || lower.ends_with(".svelte")
+            || lower.ends_with(".vue")
+            || lower.ends_with(".erl")
+            || lower.ends_with(".ex")
+            || lower.ends_with(".exs")
+            || lower.ends_with(".hs")
+            || lower.ends_with(".lhs")
+            || lower.ends_with(".clj")
+            || lower.ends_with(".cljs")
+            || lower.ends_with(".zig")
+            || lower.ends_with(".nim")
+            || lower.ends_with(".cr")
+            || lower.ends_with(".scala")
+            || lower.ends_with(".ml")
+            || lower.ends_with(".mli")
+            || lower.ends_with(".fs")
+            || lower.ends_with(".fsx")
     }
 
     fn is_definition_boundary(line: &str) -> bool {
         let t = line.trim();
-        t.starts_with("fn ") || t.starts_with("pub fn") || t.starts_with("pub(crate) fn")
-        || t.starts_with("pub(super) fn") || t.starts_with("pub unsafe fn")
-        || t.starts_with("unsafe fn") || t.starts_with("def ")
+        t.starts_with("fn ")
+            || t.starts_with("pub fn")
+            || t.starts_with("pub(crate) fn")
+            || t.starts_with("pub(super) fn")
+            || t.starts_with("pub unsafe fn")
+            || t.starts_with("unsafe fn")
+            || t.starts_with("def ")
             || t.starts_with("async def ")
-        || t.starts_with("class ") || t.starts_with("public class ")
-        || t.starts_with("private class ") || t.starts_with("protected class ")
-        || t.starts_with("struct ") || t.starts_with("pub struct ")
-        || t.starts_with("impl ") || t.starts_with("pub impl ") || t.starts_with("trait ")
-        || t.starts_with("pub trait ") || t.starts_with("enum ") || t.starts_with("pub enum ")
-        || t.starts_with("interface ") || t.starts_with("type ")
-        || t.starts_with("func ") || t.starts_with("function ")
-        || t.starts_with("sub ") || t.starts_with("public function ")
-        || t.starts_with("private function ") || t.starts_with("public static function ")
-        || t.starts_with("async fn") || t.starts_with("export function")
-        || t.starts_with("export async function") || t.starts_with("defn ")
-        || t.starts_with("CREATE ") || t.starts_with("ALTER ") || t.starts_with("DROP ")
-        || t.starts_with("SELECT ") || t.starts_with("INSERT ") || t.starts_with("UPDATE ")
-        || t.starts_with("DELETE ") || t.starts_with("pub type") || t.starts_with("pub enum")
-        || t.starts_with("macro_rules!") || t.starts_with("#[derive")
-        || t.starts_with("#[") && t.contains("]")
+            || t.starts_with("class ")
+            || t.starts_with("public class ")
+            || t.starts_with("private class ")
+            || t.starts_with("protected class ")
+            || t.starts_with("struct ")
+            || t.starts_with("pub struct ")
+            || t.starts_with("impl ")
+            || t.starts_with("pub impl ")
+            || t.starts_with("trait ")
+            || t.starts_with("pub trait ")
+            || t.starts_with("enum ")
+            || t.starts_with("pub enum ")
+            || t.starts_with("interface ")
+            || t.starts_with("type ")
+            || t.starts_with("func ")
+            || t.starts_with("function ")
+            || t.starts_with("sub ")
+            || t.starts_with("public function ")
+            || t.starts_with("private function ")
+            || t.starts_with("public static function ")
+            || t.starts_with("async fn")
+            || t.starts_with("export function")
+            || t.starts_with("export async function")
+            || t.starts_with("defn ")
+            || t.starts_with("CREATE ")
+            || t.starts_with("ALTER ")
+            || t.starts_with("DROP ")
+            || t.starts_with("SELECT ")
+            || t.starts_with("INSERT ")
+            || t.starts_with("UPDATE ")
+            || t.starts_with("DELETE ")
+            || t.starts_with("pub type")
+            || t.starts_with("pub enum")
+            || t.starts_with("macro_rules!")
+            || t.starts_with("#[derive")
+            || t.starts_with("#[") && t.contains("]")
     }
 
     fn split_code_segments(text: &str) -> Vec<(usize, String)> {
@@ -261,7 +326,10 @@ impl TextChunker {
                             source: source.to_string(),
                             token_count: sent_tokens,
                         });
-                        let overlap = Self::char_trim_end(&sent_buffer, self.chunk_overlap.min(sent_buffer.chars().count()));
+                        let overlap = Self::char_trim_end(
+                            &sent_buffer,
+                            self.chunk_overlap.min(sent_buffer.chars().count()),
+                        );
                         let overlap_tokens = Self::count_tokens(&overlap);
                         sent_buffer = if !overlap.is_empty() {
                             format!("{} {}", overlap, sentence)
@@ -316,7 +384,10 @@ impl TextChunker {
             }
 
             if !current_text.is_empty() {
-                let overlap = Self::char_trim_end(&current_text, self.chunk_overlap.min(current_text.chars().count()));
+                let overlap = Self::char_trim_end(
+                    &current_text,
+                    self.chunk_overlap.min(current_text.chars().count()),
+                );
                 current_text = if !overlap.is_empty() {
                     format!("{}\n\n{}", overlap, para)
                 } else {
@@ -409,7 +480,8 @@ impl VectorStore {
             rusqlite::Connection::open(&path).map_err(|e| format!("Failed to open db: {}", e))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
             .map_err(|e| format!("Failed to set pragmas: {}", e))?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e| format!("Failed pragma foreign_keys: {}", e))?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e| format!("Failed pragma foreign_keys: {}", e))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS chunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -449,7 +521,8 @@ impl VectorStore {
         }
 
         let conn = self.conn.lock().unwrap();
-        conn.execute("BEGIN IMMEDIATE", []).map_err(|e| format!("Failed to begin transaction: {}", e))?;
+        conn.execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| format!("Failed to begin transaction: {}", e))?;
         let mut ids = Vec::new();
 
         for (chunk, embedding) in chunks.iter().zip(embeddings.iter()) {
@@ -479,7 +552,8 @@ impl VectorStore {
             ids.push(chunk_id);
         }
 
-        conn.execute("COMMIT", []).map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        conn.execute("COMMIT", [])
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
         Ok(ids)
     }
 
