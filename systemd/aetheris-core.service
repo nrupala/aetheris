@@ -1,0 +1,19 @@
+[Unit]
+Description=Aetheris Core (Rust orchestrator, native — no Docker)
+Documentation=https://github.com/nrupala/aetheris
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Substituted by scripts/bootstrap-native.sh to the service-owning user.
+User=REPLACE_RUN_USER
+# CWD is core/ so the binary's relative "../web" resolves to the repo web/ dir.
+WorkingDirectory=/opt/aetheris/core
+EnvironmentFile=/opt/aetheris/.env.aetheris
+ExecStart=/usr/local/bin/aetheris-core
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
