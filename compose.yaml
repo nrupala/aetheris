@@ -92,7 +92,7 @@ services:
       - rag_data:/app/data
       - rag_db:/app/db
     environment:
-      - AI_ENDPOINT=http://ollama:11434
+      - AI_ENDPOINT=http://172.28.0.1:11434
       - OLLAMA_URL=http://ollama:11434
       - AI_MODEL=qwen2.5:14b
       - EMBEDDING_MODEL=nomic-embed-text
@@ -159,7 +159,7 @@ services:
       - vault_data:/data/vault
       - ./config:/etc/aetheris:ro
     environment:
-      - AI_ENDPOINT=http://ollama:11434
+      - AI_ENDPOINT=http://172.28.0.1:11434
       - OPA_ENDPOINT=http://opa-gateway:8181
       - VAULT_PATH=/data/vault
       - DISCOVERY_REGISTRY_PATH=/etc/aetheris/port_registry.json
@@ -238,7 +238,7 @@ services:
       - ./sentinel:/scripts:ro
     command: ["sh", "-c", "pip install -q requests && python /scripts/ai_sentinel.py"]
     environment:
-      - AI_ENDPOINT=http://ollama:11434
+      - AI_ENDPOINT=http://172.28.0.1:11434
     restart: unless-stopped
     networks:
       - aetheris_internal
@@ -276,7 +276,7 @@ services:
     volumes:
       - orchestrator_data:/workspace
     environment:
-      - AI_ENDPOINT=http://ollama:11434
+      - AI_ENDPOINT=http://172.28.0.1:11434
       - OPA_ENDPOINT=http://opa-gateway:8181
       - WORKSPACE_ROOT=/workspace
       - RAG_ENDPOINT=http://rag-service:8080
