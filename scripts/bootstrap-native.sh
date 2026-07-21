@@ -55,10 +55,10 @@ if command -v nginx >/dev/null 2>&1; then
     sudo cp "$APP_DIR/nginx/ssl.native.conf" /etc/nginx/conf.d/ssl.conf
     log "SSL certs found at $SSL_DIR — installed ssl.native.conf (9443)"
   else
-    sudo rm -f /etc/nginx/conf.d/ssl.conf
-    echo "WARN: no certs at $SSL_DIR — 9443 (root domain + git) will NOT be served natively."
-    echo "      Place fullchain.cer + nrupalakolkar.com.key there before cutting 9443 over,"
-    echo "      or those hostnames stay on Docker/return errors after handover."
+    echo "ERROR: no TLS certs at $SSL_DIR (need fullchain.cer + nrupalakolkar.com.key)."
+    echo "       Refusing to hand over: without 9443, the root domain + git would break."
+    echo "       Place the certs, then re-run. Docker left running; box unchanged."
+    exit 1
   fi
   sudo mkdir -p "$WEB_ROOT"; sudo cp -r "$APP_DIR/web/." "$WEB_ROOT/"
   sudo nginx -t || { echo "nginx config invalid"; rollback_to_docker; }
