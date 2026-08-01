@@ -4,6 +4,7 @@ use async_trait::async_trait;
 pub struct OllamaBridge {
     pub url: String,
     pub default_model: String,
+    pub embed_fallback_models: Vec<String>,
 }
 
 impl OllamaBridge {
@@ -11,12 +12,17 @@ impl OllamaBridge {
         Self {
             url,
             default_model: "qwen3:8b".to_string(),
+            embed_fallback_models: vec!["nomic-embed-text".to_string()],
         }
     }
 
     #[allow(dead_code)]
     pub fn with_model(url: String, default_model: String) -> Self {
-        Self { url, default_model }
+        Self {
+            url,
+            default_model,
+            embed_fallback_models: vec!["nomic-embed-text".to_string()],
+        }
     }
 }
 
@@ -68,9 +74,9 @@ impl OllamaBridge {
 #[async_trait]
 impl ModelBridge for OllamaBridge {
     async fn embed(&self, content: &str) -> Result<Vec<f32>, String> {
-        let models = ["nomic-embed-text", "deepseek-r1:8b", "qwen3:8b"];
+        let models = &self.embed_fallback_models;
         let mut last_err = String::new();
-        for model in &models {
+        for model in models {
             match self.embed_with_model(content, model).await {
                 Ok(emb) => return Ok(emb),
                 Err(e) => {

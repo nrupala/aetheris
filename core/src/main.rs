@@ -13,6 +13,7 @@ use tower_http::services::ServeDir;
 mod a2a;
 mod agents;
 mod bridge;
+mod config;
 mod connector;
 mod fusion;
 mod guardian;
@@ -54,6 +55,7 @@ pub struct AppState {
     pub wal: Arc<Mutex<wal::WriteAheadLog>>,
     pub model_bridge: Arc<dyn ModelBridge>,
     pub security_bridge: Arc<dyn SecurityBridge>,
+    pub default_model: String,
     pub a2a_gateway: Mutex<A2AGateway>,
     pub mcp_server: MCPServer,
     pub agents: Mutex<Vec<Box<dyn Agent>>>,
@@ -209,7 +211,7 @@ async fn search_handler(
     let query = params.get("q").cloned().unwrap_or_default();
     let answer = state
         .model_bridge
-        .query(&format!("Search query: {}", query), "qwen2.5:14b")
+        .query(&format!("Search query: {}", query), &state.default_model)
         .await
         .unwrap_or_default();
     let results =
@@ -803,7 +805,7 @@ async fn bridge_ai_query(
     let model = payload
         .get("model")
         .and_then(|v| v.as_str())
-        .unwrap_or("qwen2.5:14b");
+        .unwrap_or(&state.default_model);
     let peer_id = payload
         .get("peer_id")
         .and_then(|v| v.as_str())
@@ -1105,7 +1107,7 @@ async fn task_submit_handler(
 
     let mut agent = agents::create_agent(
         agent_role,
-        "qwen2.5:14b".to_string(),
+        state.default_model.clone(),
         String::new(),
         Some(state.model_bridge.clone()),
         Some(state.security_bridge.clone()),
@@ -1633,7 +1635,7 @@ async fn fusion_query_handler(
                 .into_response(),
         }
     } else {
-        match state.model_bridge.query(query, "qwen2.5:14b").await {
+        match state.model_bridge.query(query, &state.default_model).await {
             Ok(answer) => {
                 axum::Json(serde_json::json!({"query": query, "answer": answer})).into_response()
             }
@@ -1652,14 +1654,13 @@ async fn fusion_query_handler(
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Aetheris Core Active. Zero-Trust Mesh Engaged.");
 
-    let vault_path = std::env::var("VAULT_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("vault"));
-    let ai_url =
-        std::env::var("AI_ENDPOINT").unwrap_or_else(|_| "http://localhost:11434".to_string());
-    let opa_url = std::env::var("OPA_ENDPOINT").unwrap_or_else(|_| "http://opa:8181".to_string());
+    let cfg = config::Config::from_env();
+    let vault_path = cfg.vault_path.clone();
+    let ai_url = cfg.ai_endpoint.clone();
+    let opa_url = cfg.opa_endpoint.clone();
     let orch_url = std::env::var("ORCHESTRATOR_ENDPOINT").ok();
-    let ai_model = std::env::var("AI_MODEL").unwrap_or_else(|_| "qwen2.5:14b".to_string());
+    let ai_model = std::env::var("AI_MODEL").unwrap_or_else(|_| cfg.fallback_model.clone());
+    let embed_fallback_models = cfg.embed_fallback_model.clone();
 
     let registry_path = std::env::var("DISCOVERY_REGISTRY_PATH")
         .unwrap_or_else(|_| "config/port_registry.json".to_string());
@@ -1688,7 +1689,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let mut ollama = implementation::OllamaBridge::new(ai_url.clone());
-    ollama.default_model = ai_model;
+    ollama.default_model = ai_model.clone();
+    ollama.embed_fallback_models = vec![embed_fallback_models];
     let model_bridge: Arc<dyn ModelBridge> = Arc::new(ollama);
     let security_bridge: Arc<dyn SecurityBridge> =
         Arc::new(implementation::OpaBridge::new(opa_url.clone()));
@@ -1709,7 +1711,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .unwrap_or(agents::AgentRole::Researcher);
         agent_vec.push(agents::create_agent(
             r,
-            "qwen2.5:14b".to_string(),
+            ai_model.clone(),
             String::new(),
             Some(model_bridge.clone()),
             Some(security_bridge.clone()),
@@ -1737,6 +1739,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(openrouter_bridge.clone()),
         Some(exasearch_bridge.clone()),
         key_manager.clone(),
+        ai_model.clone(),
     );
 
     mcp_server.register_tool(mcp::MCPTool {
@@ -1802,6 +1805,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         security_watcher: Arc::new(watcher::SecurityWatcher::new()),
         ai_url,
         opa_url,
+        default_model: ai_model,
         port_registry,
         wal: wal_arc.clone(),
         dev_logs: {
@@ -1938,7 +1942,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/guardian", get(guardian_page_handler))
         .with_state(state);
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let port = cfg.port.to_string();
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("Aetheris Core listening on {}", addr);

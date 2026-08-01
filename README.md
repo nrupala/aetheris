@@ -6,7 +6,7 @@ Zero-trust personal cloud with AI-powered policy enforcement, secure storage, mu
 
 ```
 Browser → Cloudflare Tunnel → Nginx (auth + proxy) → Rust Core (:8080)
-  ├── Ollama (:11434) — Local LLM inference (qwen2.5:14b)
+  ├── Ollama (:11434) — Local LLM inference (qwen2.5:7b default)
   └── Python Orchestrator (:9090) — RAG pipeline, KG (optional, --profile llmvm)
 ```
 
@@ -50,8 +50,22 @@ All auth users share the password: `BCjfTYIIjMASFGVM`
 |---------|-----------|------|-------------|
 | Core | aetheris_core | 8080 | Rust Axum API server |
 | Nginx | aetheris_nginx | 443 | Reverse proxy + HTTP Basic Auth |
-| Ollama | aetheris_ollama | 11434 | Local LLM inference (qwen2.5:14b) |
+| Ollama | aetheris_ollama | 11434 | Local LLM inference (qwen2.5:7b default) |
 | Orchestrator | aetheris_orchestrator | 9090 | RAG pipeline, KG (LLMVM profile) |
+
+## Configuration
+
+Model names are resolved from environment variables at startup. Fallbacks default to models that stay installed on the host, so retiring an older model never requires a rebuild.
+
+| Env Var | Default | Purpose |
+|---------|---------|---------|
+| `AI_ENDPOINT` | `http://localhost:11434` | Ollama base URL |
+| `AI_MODEL` | `qwen2.5:7b` | Default generation model (also the fallback for `AetherisConnector`) |
+| `AETHERIS_FALLBACK_MODEL` | `qwen2.5:7b` | Generation fallback when no model is specified |
+| `AETHERIS_EMBED_FALLBACK_MODEL` | `nomic-embed-text` | Embedding model fallback |
+| `OPA_ENDPOINT` | `http://opa:8181` | OPA policy engine |
+| `PORT` | `8080` | HTTP listen port |
+| `VAULT_PATH` | `vault` | Data/vector-store directory |
 
 ## Project Structure
 
