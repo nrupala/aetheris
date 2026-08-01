@@ -1,4 +1,4 @@
-#\!/usr/bin/env bash
+#!/usr/bin/env bash
 # Phase 1 bootstrap for the Town Sovereign MCP server. No Docker.
 # Run ON oracle-aetheris, from the town-mcp/ directory, as the user that should
 # own the service.
@@ -23,27 +23,33 @@ cd "${APP_DIR}"
 mkdir -p data
 
 # .env with a strong generated bearer token
-if [ \! -f .env ]; then
+if [ ! -f .env ]; then
   cp .env.example .env
   TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)"
   sed -i "s|^MCP_BEARER_TOKEN=.*|MCP_BEARER_TOKEN=${TOKEN}|" .env
   echo "==> Generated MCP_BEARER_TOKEN in ${APP_DIR}/.env"
 fi
 
-# Ensure the embedding model is present (Ollama already serving on this box)
+# Ensure the local models are present (Ollama already serving on this box).
+# EMBED_MODEL powers sovereign_search; CHAT_MODEL powers rag_answer.
 EMBED_MODEL="$(grep -E '^EMBED_MODEL=' .env | cut -d= -f2)"
+CHAT_MODEL="$(grep -E '^CHAT_MODEL=' .env | cut -d= -f2)"
 if command -v ollama >/dev/null 2>&1; then
-  echo "==> Pulling embedding model: ${EMBED_MODEL}"
-  ollama pull "${EMBED_MODEL}" || echo "WARN: could not pull ${EMBED_MODEL}; pull it manually"
+  for M in "${EMBED_MODEL}" "${CHAT_MODEL}"; do
+    if [ -n "${M}" ]; then
+      echo "==> Pulling Ollama model: ${M}"
+      ollama pull "${M}" || echo "WARN: could not pull ${M}; pull it manually"
+    fi
+  done
 else
-  echo "WARN: 'ollama' CLI not on PATH — ensure Ollama serves on 127.0.0.1:11434"
+  echo "WARN: 'ollama' CLI not on PATH -- ensure Ollama serves on 127.0.0.1:11434"
 fi
 
 # Write the live systemd unit for this user
 UNIT=/etc/systemd/system/town-mcp.service
 sudo tee "${UNIT}" >/dev/null <<EOF
 [Unit]
-Description=Town Sovereign MCP server (Ollama-backed sovereign_search)
+Description=Town Sovereign MCP server (Ollama-backed sovereign_search + rag_answer)
 After=network-online.target
 Wants=network-online.target
 

@@ -1,4 +1,4 @@
-"""Town-facing MCP server exposing a single tool: sovereign_search.
+"""Town-facing MCP server exposing sovereign tools: sovereign_search + rag_answer.
 
 Transport: MCP Streamable HTTP (what Town's MCP client connects to by URL).
 Auth: bearer token checked on every request (Authorization: Bearer <token>),
@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from . import config
 from .store import Store
 from .embeddings import embed_one
+from .rag import rag_answer as _rag_answer
 
 store = Store(config.DB_PATH)
 mcp = FastMCP("town-sovereign", host=config.HOST, port=config.PORT,
@@ -40,6 +41,18 @@ def sovereign_search(query: str, k: int = 5) -> dict:
             for h in hits
         ],
     }
+
+
+@mcp.tool()
+def rag_answer(query: str, k: int = 5) -> dict:
+    """Answer a question from the private local corpus, with citations.
+
+    Retrieves the most relevant local chunks and has a LOCAL Ollama model compose
+    a grounded answer whose claims cite their sources by number ([1], [2], ...).
+    If nothing relevant is found locally, it says it lacks local context instead
+    of guessing. Fully local: retrieval and generation both stay on the box.
+    Returns {answer, grounded, citations, contexts, model}."""
+    return _rag_answer(query, k=k, store=store)
 
 
 @mcp.custom_route("/health", methods=["GET"])

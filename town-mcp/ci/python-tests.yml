@@ -1,0 +1,38 @@
+# Proposed CI for the Python town-mcp module.
+#
+# Milo cannot commit into .github/workflows/ (its GitHub token lacks the
+# `workflow` scope), so this proposed workflow lives here for review.
+# To activate it (from an account/token that has the workflow scope):
+#
+#   git mv town-mcp/ci/python-tests.yml .github/workflows/town-mcp-python.yml
+#   git commit -m "ci: add town-mcp python test gate" && git push
+#
+name: town-mcp Python tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['town-mcp/**']
+  pull_request:
+    branches: [main]
+    paths: ['town-mcp/**']
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: town-mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy httpx
+          pip install -r requirements-dev.txt
+      - name: Run tests
+        run: python -m pytest tests -q
