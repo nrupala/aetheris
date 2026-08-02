@@ -11,16 +11,16 @@ Guides organized by persona, following the AppDocStudio role-based documentation
 ### Access Points
 | Service | URL | Auth |
 |---------|-----|------|
-| AI Chat | `https://ai.nrupalakolkar.com` | `ai_user` |
-| RAG Q&A | `https://rag.nrupalakolkar.com` | `rag_user` |
-| Agent Dashboard | `https://agents.nrupalakolkar.com` | Shared creds |
-| Dev Sandbox | `https://dev.nrupalakolkar.com` | Shared creds |
+| AI Chat | `https://ai.nrupalakolkar.com` | Cloudflare Access |
+| RAG Q&A | `https://rag.nrupalakolkar.com` | Cloudflare Access |
+| Agent Dashboard | `https://agents.nrupalakolkar.com` | Cloudflare Access |
+| Dev Sandbox | `https://dev.nrupalakolkar.com` | Cloudflare Access |
 
-**Shared Password:** `BCjfTYIIjMASFGVM`
+**Auth:** Cloudflare Access (identity-gated at the edge — no shared password).
 
 ### Common Tasks
 
-**Chat with AI:** Open `https://ai.nrupalakolkar.com`, enter credentials, type your question. The UI uses the `qwen2.5:14b` model.
+**Chat with AI:** Open `https://ai.nrupalakolkar.com`, sign in via Cloudflare Access, type your question. The UI uses the `qwen2.5:7b` model.
 
 **Query documents:** Open `https://rag.nrupalakolkar.com`, upload documents in the Documents tab, then ask questions in the Ask tab.
 
@@ -29,7 +29,7 @@ Guides organized by persona, following the AppDocStudio role-based documentation
 **Test APIs:** Open `https://dev.nrupalakolkar.com`, use the API Console tab to execute any endpoint.
 
 ### Tips
-- All four subdomains share the same password
+- All four hostnames are gated by the same Cloudflare Access application
 - AI chat maintains conversation history automatically
 - RAG supports PDF, TXT, MD, HTML, JSON, CSV files (50MB max)
 - Agent workflows show step-by-step execution with duration
@@ -58,7 +58,9 @@ aetheris/
 │   │   └── wal.rs          # Write-ahead log
 │   └── Cargo.toml
 ├── web/                    # HTML subdomain UIs
-├── compose.yaml            # Docker Compose
+├── infra/systemd/          # systemd units (native deploy)
+├── config/core.env.example # Non-secret core environment template
+├── scripts/install-native.sh  # Native (no-Docker) installer
 └── scripts/               # Deployment scripts
 ```
 
@@ -91,9 +93,9 @@ cargo build --profile llmvm
 4. Document in `docs/api-reference/README.md`
 
 ### Common Gotchas
-- Ollama is at `:11434`, NOT LMStudio at `:1234`
-- Only one model: `qwen2.5:14b`
-- Password for all users: `BCjfTYIIjMASFGVM`
+- Ollama is at `127.0.0.1:11434` (loopback), NOT LMStudio at `:1234`
+- Only one model: `qwen2.5:7b`
+- Auth is Cloudflare Access (identity-gated) — no static credentials in code or config
 - `--profile llmvm` gates the Python orchestrator proxy
 
 ---
@@ -104,54 +106,50 @@ cargo build --profile llmvm
 
 ### Production Stack
 ```
-Browser → Cloudflare Tunnel → Nginx (auth) → Rust Core (:8080)
-  └── optionally → Python Orchestrator (:9090)
-                     └── Ollama (:11434)
+Browser → Cloudflare Access (edge auth) → Cloudflare Tunnel → aetheris-core (127.0.0.1:8080)
+  └── optionally → Python Orchestrator (127.0.0.1:9090)
+                     └── Ollama (127.0.0.1:11434)
 ```
+The core runs as a native `systemd` service (`aetheris-core`). There is no nginx —
+cloudflared points straight at the loopback core.
 
 ### Deployment
 ```bash
-# Full stack
-docker compose build
-docker compose up -d
-
-# With LLMVM (agent orchestrator)
-docker compose --profile llmvm up -d
+# Install / update (idempotent)
+sudo scripts/install-native.sh
 
 # Verify
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/health
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/health
 ./scripts/verification.sh
 ```
+See `docs/DEPLOY_NATIVE.md` for the full runbook.
 
 ### Upgrade Procedure
 1. Pull latest code: `git pull`
-2. Rebuild: `docker compose build core`
-3. Restart: `docker compose up -d --force-recreate core`
-4. Verify health
-5. For major upgrades, back up volumes first
+2. Reinstall: `sudo scripts/install-native.sh` (rebuilds the binary, restarts the service)
+3. Verify health
+4. For major upgrades, back up the vault first
 
 ### Monitoring
 - **Health endpoint:** `GET /api/health` — agent count, task count, cross-system status
 - **Dev logs:** `GET /api/dev/logs` — WAL-backed audit trail
-- **Metrics:** `GET /api/dev/metrics` — service health, containers, uptime
+- **Metrics:** `GET /api/dev/metrics` — service health, uptime
 - **Circuit breakers:** `GET /api/coordinator/circuits` — engine health states
+- **Service logs:** `journalctl -u aetheris-core -f`
 
 ### Backup
 ```bash
-# RAG data
-docker cp <rag-container>:/app/data ./backups/rag/
+# RAG data + WAL (audit log)
+cp -r /data/vault/ ./backups/vault/
 
 # Config
 cp -r /etc/aetheris/ ./backups/config/
-
-# WAL
-cp -r /path/to/vault/wal/ ./backups/wal/
 ```
 
 ### Emergency Procedures
 1. **Kill switch:** `./scripts/killswitch.sh` — stops everything, shreds secrets
-2. **Service failure:** Check logs: `docker compose logs -f core`
-3. **Ollama failure:** Restart: `docker compose restart ollama`
+2. **Service failure:** Check logs: `journalctl -u aetheris-core -n 100`
+3. **Ollama failure:** Restart: `systemctl restart ollama`
 4. **Tunnel failure:** Check: `cloudflared tunnel list` — restart: `cloudflared tunnel restart <id>`
 
 ---
@@ -163,14 +161,14 @@ cp -r /path/to/vault/wal/ ./backups/wal/
 ### Security Architecture
 - **Encryption at rest:** ZFS with AES-256-GCM
 - **Encryption in transit:** Cloudflare Tunnel (TLS) + WireGuard mesh (Curve25519)
-- **Access control:** HTTP Basic Auth at Nginx + OPA policy engine for fine-grained authorization
+- **Access control:** Cloudflare Access (identity-gated at the edge) + OPA policy engine for fine-grained authorization
 - **Audit trail:** WAL (Write-Ahead Log) records all operations with sequence numbers
 - **Session isolation:** All user sessions are isolated with no shared state
 
 ### Audit Points
 1. **WAL integrity:** Verify sequence numbers are monotonic and unbroken
 2. **OPA policies:** Review `default deny` enforcement and role definitions
-3. **Access logs:** Nginx access logs capture all requests with timestamps
+3. **Access logs:** Cloudflare Access logs capture every authenticated request with identity
 4. **File integrity:** ZFS snapshots provide point-in-time evidence
 5. **Data retention:** RAG pipeline auto-cleans temporary files (1h-7d TTL)
 6. **Emergency protocol:** Kill switch procedure documented and tested
@@ -178,7 +176,7 @@ cp -r /path/to/vault/wal/ ./backups/wal/
 ### Compliance Checklist
 - [ ] WAL replay produces valid sequence without gaps
 - [ ] OPA default deny returns false for unauthorized actions
-- [ ] All API endpoints require authentication (HTTP Basic Auth)
+- [ ] All API endpoints require authentication (Cloudflare Access)
 - [ ] No plaintext secrets in source code or config
 - [ ] TLS termination at Cloudflare edge
 - [ ] ZFS native encryption enabled on all datasets
@@ -191,37 +189,40 @@ cp -r /path/to/vault/wal/ ./backups/wal/
 *You manage users, credentials, and access policies.*
 
 ### User Management
-Aetheris uses HTTP Basic Auth at the Nginx proxy layer. There are three user accounts:
+Aetheris uses **Cloudflare Access** at the edge for authentication. Access is granted by
+policy in the Cloudflare Zero Trust dashboard rather than per-service accounts:
 
-| User | Subdomain Access | Notes |
-|------|-----------------|-------|
-| `ai_user` | `ai.nrupalakolkar.com` | AI chat interface |
-| `rag_user` | `rag.nrupalakolkar.com` | RAG document Q&A |
-| `dev_user` | `agents.nrupalakolkar.com`, `dev.nrupalakolkar.com` | Dashboard + sandbox |
+| Access | Hostname | Notes |
+|--------|----------|-------|
+| Identity policy | `ai.nrupalakolkar.com` | AI chat interface |
+| Identity policy | `rag.nrupalakolkar.com` | RAG document Q&A |
+| Identity policy | `agents.nrupalakolkar.com`, `dev.nrupalakolkar.com` | Dashboard + sandbox |
 
-All users share the same password: `BCjfTYIIjMASFGVM`
+Grant or revoke access by editing the Access application's policy (allowed emails /
+groups). For scripted/API access, mint a **service token**.
 
 ### Managing Credentials
-Credentials are configured via environment variables in Docker Compose:
-```yaml
-NGINX_BASIC_AUTH: "ai_user:$2y$10$...;rag_user:$2y$10$...;dev_user:$2y$10$..."
-```
-Use `htpasswd` to generate new password hashes:
+There are no static passwords. Interactive users authenticate with their identity;
+automation uses a Cloudflare Access **service token** passed as headers:
 ```bash
-htpasswd -nbB ai_user "new-password"
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+     https://core.nrupalakolkar.com/api/health
 ```
+Rotate the token from the Cloudflare Zero Trust dashboard; nothing on the box changes.
 
 ### Access Logs
-Nginx logs are available at:
+Authentication events are in the Cloudflare Access logs (Zero Trust dashboard → Logs →
+Access). Core request logs:
 ```bash
-docker compose logs nginx | grep "auth"
+journalctl -u aetheris-core | grep "auth"
 ```
 
 ### OPA Policy Management
 OPA policies are in `core/policies/`. To modify:
 1. Edit Rego policy files
 2. Test locally: `opa eval --data policies/ "data.aetheris.allow"`
-3. Restart core: `docker compose restart core`
+3. Restart core: `systemctl restart aetheris-core`
 
 ---
 
@@ -231,33 +232,31 @@ OPA policies are in `core/policies/`. To modify:
 
 ### Service Architecture
 ```
-Docker Services:
-├── core (:8080)          — Rust Axum API gateway
-├── nginx (:443)          — SSL termination, auth, reverse proxy
-├── ollama (:11434)       — LLM inference (qwen2.5:14b)
-├── orchestrator (:9090)  — RAG pipeline, KG (optional, LLMVM profile)
-├── chroma                — Vector database (optional)
-├── opa (:8181)           — Policy engine (optional)
-├── victoria-metrics (:8428)  — Metrics (optional)
-└── grafana (:3000)       — Visualization (optional)
+Native systemd services (127.0.0.1 loopback):
+├── aetheris-core (:8080)   — Rust Axum API gateway
+├── cloudflared             — Cloudflare Tunnel + Access (edge TLS/auth)
+├── ollama (:11434)         — LLM inference (qwen2.5:7b)
+├── orchestrator (:9090)    — RAG pipeline, KG (optional, LLMVM profile)
+├── chroma                  — Vector database (optional)
+├── opa (:8181)             — Policy engine (optional)
+└── victoria-metrics (:8428)  — Metrics (optional)
 ```
 
 ### Routine Maintenance
 ```bash
 # Daily
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/health
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/health
 
 # Weekly
-docker compose logs --tail=100 core > /var/log/aetheris/core-weekly.log
-docker system prune -f
+journalctl -u aetheris-core --since "1 week ago" > /var/log/aetheris/core-weekly.log
 
 # Monthly
-docker compose build --no-cache core
+git pull && sudo scripts/install-native.sh
 ```
 
 ### Scaling Considerations
-- **Memory:** qwen2.5:14b requires ~8GB RAM for the model alone
-- **Storage:** RAG data grows with uploaded documents; monitor `rag_data` volume
+- **Memory:** qwen2.5:7b requires ~5GB RAM for the model alone
+- **Storage:** RAG data grows with uploaded documents; monitor the `/data/vault` directory
 - **Concurrency:** Axum handles concurrent requests efficiently; monitor WAL write throughput
 - **Network:** Cloudflare Tunnel handles up to 100Mbps; upgrade plan for higher throughput
 
@@ -265,18 +264,18 @@ docker compose build --no-cache core
 
 **502 Bad Gateway:**
 ```bash
-docker compose logs core
-# Likely: Ollama not reachable — check docker compose logs ollama
+journalctl -u aetheris-core -n 100
+# Likely: Ollama not reachable — check `systemctl status ollama`
 ```
 
 **Ollama model not found:**
 ```bash
-docker compose exec ollama ollama pull qwen2.5:14b
+ollama pull qwen2.5:7b
 ```
 
 **Agent workflow fails:**
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/agents/status
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/agents/status
 # Check agent states — executing vs failed
 ```
 

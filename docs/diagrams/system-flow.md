@@ -58,14 +58,14 @@ flowchart TB
         KGENG[("🔴 Knowledge Graph")]
     end
 
-    subgraph Ollama["🟡 Ollama — Port 11434"]
-        LLM[("🔴 qwen2.5:14b")]
+    subgraph Ollama["🟡 Ollama — 127.0.0.1:11434 (loopback)"]
+        LLM[("🔴 qwen2.5:7b")]
         EMBED[("🔴 Embedding Model")]
     end
 
     subgraph Infra["🟢 Infrastructure"]
-        NGX[("Nginx Proxy")]
-        CF[("Cloudflare Tunnel")]
+        CFD[("cloudflared (native)")]
+        CF[("Cloudflare Tunnel + Access")]
     end
 
     %% Connections that work
@@ -102,8 +102,9 @@ flowchart TB
     ING -.->|"❌ Not Connected"| RAGENG
     MODL -.->|"❌ Not Connected"| LLM
 
-    %% Production path
-    NGX --> CF
+    %% Production path (native): cloudflared → loopback core, gated by Access
+    CFD --> CF
+    CFD --> GW
 ```
 
 ## Data Flow Diagram
@@ -117,10 +118,10 @@ flowchart LR
     end
 
     subgraph Production["☁️ Production (target state)"]
-        PROXY["Nginx + Cloudflare"]
-        RUST["Rust Core :8080"]
+        PROXY["Cloudflare Access + Tunnel → cloudflared"]
+        RUST["aetheris-core :8080 (systemd, loopback)"]
         PYTHON["Python Orchestrator :9090"]
-        OLLAMA["Ollama :11434"]
+        OLLAMA["Ollama 127.0.0.1:11434"]
         VECDB[("ChromaDB :8000")]
         METRICS[("VictoriaMetrics :8428")]
     end
@@ -150,7 +151,7 @@ flowchart LR
 - Web UIs served statically under `/web/`
 
 ### 🟡 Partial / Broken
-- **Dev Sandbox**: Endpoints use `/api/*` prefix — 404 locally (nginx-only in production). Need to detect local vs proxy mode
+- **Dev Sandbox**: Endpoints use `/api/*` prefix — 404 locally (Access-gated proxy in production). Need to detect local vs proxy mode
 - **RAG queries**: Return synthetic mock data, not real results
 - **AI Chat**: Falls back to hardcoded model list — Ollama not running
 
@@ -160,7 +161,7 @@ flowchart LR
 - **Orchestrator proxy**: Python service not started
 - **ChromaDB**: Vector database not running
 - **VictoriaMetrics**: Metrics DB not running
-- **Nginx + Cloudflare**: Can't test locally
+- **Cloudflare Access + Tunnel**: Can't test locally
 
 ## Quick Fix Priority
 
@@ -180,7 +181,7 @@ gantt
     
     section Medium-term
     Test RAG upload→query end-to-end  :a5, after a4, 1d
-    Full docker compose --profile llmvm :a6, after a5, 1d
+    Full native bring-up (systemd + cloudflared) :a6, after a5, 1d
     
     section Ship
     Commit, push, deploy             :a7, after a6, 1d

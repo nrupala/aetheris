@@ -121,7 +121,7 @@ docker compose logs -f rag
 
 ```bash
 # Tunnel ID from your Cloudflare dashboard
-TUNNEL_ID="267e8c28-fc70-4a0d-9c65-1790d6b14477"
+TUNNEL_ID="<your-cloudflare-tunnel-id>"
 
 # The tunnel is already configured in compose.yaml
 # Routes:

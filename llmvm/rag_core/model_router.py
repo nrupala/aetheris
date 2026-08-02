@@ -520,8 +520,8 @@ class StructuredOutputError(Exception):
 # --- Default Configuration ---
 
 def create_default_router(
-    ollama_endpoint: str = "http://ollama:11434",
-    ollama_model: str = "qwen2.5:14b",
+    ollama_endpoint: str = "http://127.0.0.1:11434",
+    ollama_model: str = "qwen2.5:7b",
     lmstudio_endpoint: str = "http://localhost:1234",
     lmstudio_model: str = "microsoft/phi-4-reasoning-plus",
 ) -> ModelRouter:

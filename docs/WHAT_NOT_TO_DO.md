@@ -54,7 +54,7 @@ Passwords, API keys, and tokens must come from environment variables, not source
 
 ```bash
 # ❌ Bad: password in code
-let password = "BCjfTYIIjMASFGVM";
+let password = "super-secret-value";
 
 # ✅ Good: password from environment
 let password = std::env::var("AETHERIS_PASSWORD").unwrap();
@@ -72,32 +72,32 @@ let data = file.read_to_string().await?;
 ```
 
 ### Don't open unnecessary ports
-Every open port is an attack surface. Aetheris should only expose port 8080 (Rust core) behind the Nginx proxy.
+Every open port is an attack surface. Aetheris should only expose the core (`127.0.0.1:8080`) via cloudflared, gated by Cloudflare Access.
 
-- Port 11434 (Ollama) — NEVER expose publicly; only accessible to core via internal Docker network
-- Port 9090 (Python orchestrator) — NEVER expose publicly; only accessible to core via internal network
+- Port 11434 (Ollama) — NEVER expose publicly; loopback-only (`127.0.0.1`), reachable only by the core on the host
+- Port 9090 (Python orchestrator) — NEVER expose publicly; loopback-only, reachable only by the core
 - Port 22 (SSH) — NEVER expose; use Cloudflare Tunnel for admin access
 
 ## Operations
 
-### Don't run `docker compose down -v` in production
-The `-v` flag removes all volumes, including RAG data, config, and databases. This is irreversible.
+### Don't delete the vault / data directory in production
+The vault under `/data/vault` holds RAG data, config, and the WAL. Deleting it is irreversible.
 
 ```bash
 # ❌ Dangerous in production
-docker compose down -v
+rm -rf /data/vault
 
 # ✅ Safe restart
-docker compose restart
-# ✅ Full reset with data preserved
-docker compose down && docker compose up -d
+systemctl restart aetheris-core
+# ✅ Full reinstall with data preserved (never overwrites /etc/aetheris/core.env)
+sudo scripts/install-native.sh
 ```
 
 ### Don't deploy without verifying service health
 Always run verification checks after deployment:
 
 ```bash
-curl -u user:pass https://dev.nrupalakolkar.com/api/health
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/health
 ./scripts/verification.sh
 ```
 
@@ -125,18 +125,18 @@ cargo clippy -- -D warnings
 ```
 
 ### Don't assume LMStudio is available
-The production server runs Ollama on port 11434, not LMStudio on port 1234. Always use `AI_ENDPOINT=http://host.docker.internal:11434`.
+The production server runs Ollama on port 11434, not LMStudio on port 1234. Always use `AI_ENDPOINT=http://127.0.0.1:11434`.
 
 ### Don't add new dependencies without review
 Every dependency increases build time, binary size, and attack surface. Ask before adding.
 
 ## Configuration
 
-### Don't use incorrect auth credentials
-The single production password `BCjfTYIIjMASFGVM` applies to all users: `ai_user`, `rag_user`, `dev_user`. The previous separate password `H5epZhriylz+99+1` for `rag_user` is deprecated.
+### Don't use incorrect auth
+Auth is via **Cloudflare Access** (identity-gated at the edge) — there is no HTTP Basic Auth and no shared password. Interactive users sign in with their identity; automation uses a Cloudflare Access **service token** (`CF-Access-Client-Id` / `CF-Access-Client-Secret` headers) sourced from the environment. Never put credentials in source or config.
 
 ### Don't reference models that don't exist
-The production server only has one model: `qwen2.5:14b`. Don't reference `strand-rust-coder-14b-v1`, `microsoft/phi-4-reasoning-plus`, or other models that may not be loaded.
+The production server's default model is `qwen2.5:7b`, with `qwen3:8b` for deep reasoning. Don't reference `strand-rust-coder-14b-v1`, `microsoft/phi-4-reasoning-plus`, or other models that may not be loaded.
 
 ## Testing
 

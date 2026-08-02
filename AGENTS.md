@@ -7,14 +7,13 @@
 ```bash
 # Build and run
 cargo build --release
-./target/release/aetheris
+./target/release/aetheris-core
 
 # Run tests
 cargo test --all
 
-# Docker build
-docker compose build
-docker compose up -d
+# Native deploy (systemd, no Docker)
+sudo scripts/install-native.sh
 ```
 
 ## Architecture
@@ -53,8 +52,9 @@ aetheris/
 │   ├── agents/index.html   # Agent Dashboard with helps panel
 │   ├── rag/index.html      # RAG Document Q&A with help panel
 │   └── dev/index.html      # Dev Sandbox with help panel
-├── compose.yaml             # Docker Compose stack (+ LLMVM profile)
-├── Dockerfile.core          # Rust container
+├── infra/systemd/          # systemd units (native deploy)
+├── config/core.env.example # Non-secret core environment template
+├── scripts/install-native.sh  # Native (no-Docker) installer
 ├── docs/                    # Restructured documentation (AppDocs format)
 │   ├── architecture/        # System architecture docs
 │   ├── api-reference/       # API specs
@@ -76,7 +76,7 @@ aetheris/
 - **Policy Engine**: OPA (Open Policy Agent)
 - **Storage**: ZFS with native encryption
 - **VPN**: WireGuard for mesh networking
-- **Container Runtime**: Docker Compose
+- **Runtime**: Native systemd (no Docker)
 - **CI/CD**: GitHub Actions
 
 ## Development Workflow
@@ -95,8 +95,8 @@ cargo test
 # Integration tests
 cargo test --test '*'
 
-# UAT tests (requires Docker)
-docker compose up -d
+# UAT tests (native)
+sudo scripts/install-native.sh
 ./scripts/verification.sh
 ```
 
@@ -118,9 +118,9 @@ docker compose up -d
 2. Test locally with `opa eval`
 3. Update connector.rs if API changes
 
-### Docker Changes
-1. Test locally: `docker compose build && docker compose up -d`
-2. Verify logs: `docker compose logs -f`
+### Deploy Changes
+1. Test locally: `cargo build --release && ./target/release/aetheris-core`
+2. Verify logs: `journalctl -u aetheris-core -f`
 3. Check health: `curl http://localhost:8080/health`
 
 ## Troubleshooting
@@ -131,12 +131,11 @@ cargo clean
 cargo build --release
 ```
 
-### Docker Issues
+### Service Issues
 ```bash
-# Reset containers
-docker compose down -v
-docker compose build --no-cache
-docker compose up -d
+# Reset the native service
+systemctl restart aetheris-core
+sudo scripts/install-native.sh
 ```
 
 ### Test Failures
@@ -150,7 +149,7 @@ RUST_LOG=debug cargo test
 - **build.yml**: Runs on every PR/push to main
 - **uat.yml**: Runs UAT tests on merge to main
 - **pages.yml**: Deploys documentation to GitHub Pages
-- **deploy.yml**: Pushes images to GHCR on release
+- **release.yml**: Cross-compiles release binaries on tag
 
 ## Getting Help
 - Check `TODO.md` for current status
@@ -167,17 +166,17 @@ RUST_LOG=debug cargo test
 - **Agent pipeline** ✅ — Planner/Researcher/Coder/Reviewer with A2A messaging, MCP tools
 - **WAL** ✅ — 9 entry types, append/replay/truncate, 11 tests
 - **Bridge traits** ✅ — `ModelBridge`, `SecurityBridge`, `AetherisBridge` with `Send + Sync`
-- **Docker Compose** ✅ — LLMVM profile for agent orchestration
+- **Native systemd deploy** ✅ — install-native.sh + aetheris-core.service (no Docker)
 - **Documentation** ✅ — Restructured to AppDocs format with role-based guides
 - **Help panels** ✅ — All 4 subdomain UIs have comprehensive help panels
 - **Reranker** ✅ — `rerank()` added to `ModelBridge` trait, implemented via Ollama `/api/rerank`, wired into `rag_query_handler` with `RagConfig.reranker_model`/`reranker_enabled`
-- **Model set 2026** ✅ — Updated defaults: `qwen3:8b` (primary), `deepseek-r1:8b` (deep reasoning), `bge-reranker-v2-m3` (reranker), `phi4-mini` (lightweight), `phi4-reasoning` (full reasoning)
-- **RAG pipeline live** ✅ — End-to-end RAG on `qwen2.5:1.5b` (CPU): embed → search → generate, 24 sources indexed, 145 chunks, working via localhost:8080 and nginx at rag.nrupalakolkar.com with `top_k=3`, 600s timeout, `took_ms` timing fixed
+- **Model set 2026** ✅ — Updated defaults: `qwen3:8b` (primary / deep reasoning), `bge-reranker-v2-m3` (reranker), `phi4-mini` (lightweight), `phi4-reasoning` (full reasoning)
+- **RAG pipeline live** ✅ — End-to-end RAG on `qwen2.5:1.5b` (CPU): embed → search → generate, 24 sources indexed, 145 chunks, working via localhost:8080 and cloudflared at rag.nrupalakolkar.com with `top_k=3`, 600s timeout, `took_ms` timing fixed
 
 ### In Progress
 - **WAL-backed dev logs** — logs endpoint initialized but not dynamically appended
 - **Agent state `Waiting`** — defined in enum but never reached in sequential execution
-- **UAT tests** — need Docker deployment to run verification scripts
+- **UAT tests** — need a native deployment to run verification scripts
 
 ## Containerized File Management
 Aetheris provides a secure, containerized file management system that leverages ZFS technology with native encryption. Key features include:

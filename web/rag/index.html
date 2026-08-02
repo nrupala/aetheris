@@ -254,21 +254,21 @@
             <h3>Access</h3>
             <ul>
                 <li><strong>URL:</strong> <code>https://rag.nrupalakolkar.com</code></li>
-                <li><strong>Auth:</strong> HTTP Basic Auth — <code>rag_user</code> / <code>BCjfTYIIjMASFGVM</code></li>
+                <li><strong>Auth:</strong> Cloudflare Access (identity-gated; no static credentials)</li>
                 <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
             </ul>
 
             <h3>Architecture</h3>
-            <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy)
+            <pre><code>Browser → Cloudflare Edge (Access) → Tunnel → Aetheris Core (:8080)
   → Rust Core (:8080) — API gateway, proxies /query, /ingest, /sources
     → Python Orchestrator (:9090) — RAG pipeline, embeddings, vector store
-      → Ollama (:11434) — LLM generation (qwen2.5:14b)</code></pre>
+      → Ollama (:11434) — LLM generation (qwen2.5:7b)</code></pre>
             <div class="pipeline">
                 <div class="step">📄 Document Upload → <span class="arrow">→</span> 🔪 Text Chunking</div>
                 <div class="step">🔪 Chunks → <span class="arrow">→</span> 🧮 Embedding Generation</div>
                 <div class="step">🧮 Embeddings → <span class="arrow">→</span> 💾 Vector Store (SQLite + chroma)</div>
                 <div class="step">❓ Query → <span class="arrow">→</span> 🔍 Semantic Search (top-k)</div>
-                <div class="step">🔍 Results → <span class="arrow">→</span> 🤖 LLM Generation (qwen2.5:14b)</div>
+                <div class="step">🔍 Results → <span class="arrow">→</span> 🤖 LLM Generation (qwen2.5:7b)</div>
                 <div class="step">🤖 Answer → <span class="arrow">→</span> 💬 Response with Sources</div>
             </div>
 
@@ -298,12 +298,12 @@
 
             <h4><span class="method-get">GET</span> <code>/health</code></h4>
             <p>Check service status.</p>
-            <pre><code>curl -u rag_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://rag.nrupalakolkar.com/health</code></pre>
 
             <h4><span class="method-post">POST</span> <code>/query</code></h4>
             <p>Ask a question against indexed documents.</p>
-            <pre><code>curl -u rag_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://rag.nrupalakolkar.com/query \
   -H "Content-Type: application/json" \
   -d '{
@@ -319,13 +319,13 @@
 
             <h4><span class="method-post">POST</span> <code>/ingest/file</code></h4>
             <p>Upload and index a single file.</p>
-            <pre><code>curl -u rag_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://rag.nrupalakolkar.com/ingest/file \
   -F "file=@document.pdf"</code></pre>
 
             <h4><span class="method-post">POST</span> <code>/ingest/directory</code></h4>
             <p>Index an entire directory.</p>
-            <pre><code>curl -u rag_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   "https://rag.nrupalakolkar.com/ingest/directory?path=/config/workspace/docs"</code></pre>
 
             <h4><span class="method-get">GET</span> <code>/stats</code></h4>
@@ -378,14 +378,14 @@
             <h3>Infrastructure</h3>
             <ul>
                 <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
-                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
-                <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2</li>
+                <li><strong>Access:</strong> Cloudflare Access (identity-gated)</li>
                 <li><strong>Service:</strong> Python FastAPI + Uvicorn on port 9090</li>
                 <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
-                <li><strong>LLM:</strong> Ollama on port 11434 (qwen2.5:14b)</li>
+                <li><strong>LLM:</strong> Ollama on port 11434 (qwen2.5:7b)</li>
                 <li><strong>Vector Store:</strong> SQLite + ChromaDB</li>
                 <li><strong>Embeddings:</strong> Local embedding model (via Ollama on AI service)</li>
-                <li><strong>Storage:</strong> Docker volume (rag_data)</li>
+                <li><strong>Storage:</strong> local vault directory (rag_data)</li>
                 <li><strong>Chunking:</strong> Recursive text splitter (~500 tokens)</li>
                 <li><strong>Knowledge Graph:</strong> Entity-relation graph for personal context</li>
                 <li><strong>Reasoning:</strong> Iterative self-verification with temperature annealing</li>

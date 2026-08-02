@@ -102,24 +102,24 @@
             <h2>📘 Aetheris AI — Documentation</h2>
             
             <h3>Overview</h3>
-            <p>Aetheris AI provides local LLM inference via <strong>Ollama</strong> running on the host machine. All inference happens locally with zero cloud dependency, ensuring complete data privacy. The production server currently runs <strong>qwen2.5:14b</strong> as the single model.</p>
+            <p>Aetheris AI provides local LLM inference via <strong>Ollama</strong> running on the host machine. All inference happens locally with zero cloud dependency, ensuring complete data privacy. The production server currently runs <strong>qwen2.5:7b</strong> as the single model.</p>
             
             <h3>Access</h3>
             <ul>
                 <li><strong>URL:</strong> <code>https://ai.nrupalakolkar.com</code></li>
-                <li><strong>Auth:</strong> HTTP Basic Auth — <code>ai_user</code> / <code>BCjfTYIIjMASFGVM</code></li>
+                <li><strong>Auth:</strong> Cloudflare Access (identity-gated; no static credentials)</li>
                 <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
             </ul>
 
             <h3>Architecture</h3>
-            <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy)
+            <pre><code>Browser → Cloudflare Edge (Access) → Tunnel → Aetheris Core (:8080)
   → Rust Core (:8080) — API gateway, proxies /v1/* to Ollama
-    → Ollama (:11434) — Local LLM inference (qwen2.5:14b)</code></pre>
+    → Ollama (:11434) — Local LLM inference (qwen2.5:7b)</code></pre>
             <ul>
                 <li><strong>Inference Engine:</strong> Ollama API server (OpenAI-compatible)</li>
-                <li><strong>Current Model:</strong> <code>qwen2.5:14b</code> (14B parameter Qwen 2.5)</li>
+                <li><strong>Current Model:</strong> <code>qwen2.5:7b</code> (14B parameter Qwen 2.5)</li>
                 <li><strong>API Format:</strong> OpenAI-compatible <code>/v1/chat/completions</code> and <code>/v1/models</code></li>
-                <li><strong>Security:</strong> HTTP Basic Auth at nginx layer + Cloudflare encryption</li>
+                <li><strong>Security:</strong> Cloudflare Access (identity-gated) + Cloudflare encryption</li>
                 <li><strong>Cost:</strong> $0/month — fully local, no API calls to external services</li>
             </ul>
 
@@ -128,16 +128,16 @@
 
             <h4><span class="method-get">GET</span> <code>/v1/models</code></h4>
             <p>List available models with metadata.</p>
-            <pre><code>curl -u ai_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://ai.nrupalakolkar.com/v1/models</code></pre>
 
             <h4><span class="method-post">POST</span> <code>/v1/chat/completions</code></h4>
             <p>Generate chat completions with conversation history.</p>
-            <pre><code>curl -u ai_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://ai.nrupalakolkar.com/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen2.5:14b",
+    "model": "qwen2.5:7b",
     "messages": [{"role": "user", "content": "Explain Rust ownership"}],
     "max_tokens": 4096,
     "temperature": 0.7
@@ -149,9 +149,9 @@
             <pre><code>import requests
 resp = requests.post(
     "https://ai.nrupalakolkar.com/v1/chat/completions",
-    auth=("ai_user", "BCjfTYIIjMASFGVM"),
+    headers={"CF-Access-Client-Id": os.environ["CF_ACCESS_CLIENT_ID"], "CF-Access-Client-Secret": os.environ["CF_ACCESS_CLIENT_SECRET"]},
     json={
-        "model": "qwen2.5:14b",
+        "model": "qwen2.5:7b",
         "messages": [{"role": "user", "content": "Hello!"}],
         "max_tokens": 100
     }
@@ -159,10 +159,10 @@ resp = requests.post(
 print(resp.json()["choices"][0]["message"]["content"])</code></pre>
 
             <h4>cURL</h4>
-            <pre><code>curl -u ai_user:BCjfTYIIjMASFGVM \
+            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://ai.nrupalakolkar.com/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5:14b","messages":[{"role":"user","content":"Hi"}],"max_tokens":50}'</code></pre>
+  -d '{"model":"qwen2.5:7b","messages":[{"role":"user","content":"Hi"}],"max_tokens":50}'</code></pre>
 
             <h4>OpenAI SDK</h4>
             <pre><code>from openai import OpenAI
@@ -171,15 +171,15 @@ client = OpenAI(
     base_url="https://ai.nrupalakolkar.com/v1"
 )
 resp = client.chat.completions.create(
-    model="qwen2.5:14b",
+    model="qwen2.5:7b",
     messages=[{"role": "user", "content": "Explain Rust lifetimes"}]
 )</code></pre>
 
             <h3>Tips</h3>
             <ul>
-                <li><strong>Current model:</strong> <code>qwen2.5:14b</code> — general-purpose 14B parameter model, good for code, reasoning, and chat</li>
+                <li><strong>Current model:</strong> <code>qwen2.5:7b</code> — general-purpose 14B parameter model, good for code, reasoning, and chat</li>
                 <li><strong>Conversation context:</strong> Chat UI maintains history automatically</li>
-                <li><strong>Max tokens:</strong> Set higher for longer outputs (default 4096, max 8192 for qwen2.5:14b)</li>
+                <li><strong>Max tokens:</strong> Set higher for longer outputs (default 4096, max 8192 for qwen2.5:7b)</li>
                 <li><strong>Temperature:</strong> 0.0 for deterministic, 0.7 for creative, 1.0 for maximum variety</li>
                 <li><strong>Streaming:</strong> Set <code>stream: true</code> in request body for token-by-token streaming</li>
                 <li><strong>System prompt:</strong> Include a <code>system</code> role message to set behavior</li>
@@ -195,10 +195,10 @@ resp = client.chat.completions.create(
             <h3>Infrastructure</h3>
             <ul>
                 <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
-                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
-                <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2</li>
+                <li><strong>Access:</strong> Cloudflare Access (identity-gated)</li>
                 <li><strong>Runtime:</strong> Ollama API server on port 11434</li>
-                <li><strong>Memory:</strong> ~2GB allocated to Docker, ~8GB for qwen2.5:14b model</li>
+                <li><strong>Memory:</strong> ~2GB for the core service, ~5GB for the qwen2.5:7b model</li>
             </ul>
         </div>
     </div>

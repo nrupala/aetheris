@@ -16,8 +16,8 @@ class OrchestratorConfig:
     port: int = 9090
     
     # Model routing
-    ai_endpoint: str = os.environ.get("AI_ENDPOINT", "http://ollama:11434")
-    default_model: str = os.environ.get("DEFAULT_MODEL", "qwen2.5:14b")
+    ai_endpoint: str = os.environ.get("AI_ENDPOINT", "http://127.0.0.1:11434")
+    default_model: str = os.environ.get("DEFAULT_MODEL", "qwen2.5:7b")
     fallback_model: str = os.environ.get("FALLBACK_MODEL", "ibm/granite-4-h-tiny")
     
     # A2A Protocol
@@ -45,10 +45,10 @@ class OrchestratorConfig:
     
     # Model assignments per role
     role_models: dict = field(default_factory=lambda: {
-        "researcher": "qwen2.5:14b",
-        "coder": "qwen2.5:14b",
-        "reviewer": "qwen2.5:14b",
-        "planner": "qwen2.5:14b",
+        "researcher": "qwen2.5:7b",
+        "coder": "qwen2.5:7b",
+        "reviewer": "qwen2.5:7b",
+        "planner": "qwen2.5:7b",
     })
     
     # System prompts per role

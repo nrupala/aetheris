@@ -29,41 +29,34 @@ cargo run --release                        # Run release build
 ./target/release/aetheris                  # Run compiled binary
 ```
 
-### Docker
+### Native service (systemd)
+The core runs as a native systemd service — no Docker. See `docs/DEPLOY_NATIVE.md`.
 ```bash
-# Build and start
-docker compose build                       # Build all images
-docker compose up -d                       # Start all services
-docker compose up -d --profile llmvm       # Start with LLMVM (agent orchestrator)
+# Install / update (idempotent; builds the static musl binary, installs unit + env)
+sudo scripts/install-native.sh
 
 # Manage
-docker compose ps                          # List running services
-docker compose logs -f                     # Follow all logs
-docker compose logs -f core               # Follow core service logs
-docker compose restart core               # Restart core only
-
-# Stop
-docker compose down                        # Stop and remove containers
-docker compose down -v                     # ⚠️ Also removes volumes (data loss!)
-docker compose down --rmi all              # Remove images too
-
-# Clean rebuild
-docker compose build --no-cache core       # Rebuild core from scratch
-docker compose up -d --force-recreate      # Force recreate containers
+systemctl status aetheris-core             # Service status
+systemctl restart aetheris-core            # Restart core
+systemctl enable --now aetheris-core       # Enable + start
+journalctl -u aetheris-core -f             # Follow core logs
+journalctl -u aetheris-core -n 100         # Last 100 log lines
 ```
 
 ## Service Health
 
 ### Health Checks
+Auth is via Cloudflare Access — API calls carry a service token in headers (no static
+credentials). The token values live in your environment / secret store.
 ```bash
 # Core API health
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/health
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/health
 
 # AI service
-curl -u ai_user:BCjfTYIIjMASFGVM https://ai.nrupalakolkar.com/v1/models
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://ai.nrupalakolkar.com/v1/models
 
 # RAG service
-curl -u rag_user:BCjfTYIIjMASFGVM https://rag.nrupalakolkar.com/health
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://rag.nrupalakolkar.com/health
 
 # Full verification
 ./scripts/verification.sh
@@ -73,15 +66,15 @@ curl -u rag_user:BCjfTYIIjMASFGVM https://rag.nrupalakolkar.com/health
 
 ### AI Chat
 ```bash
-curl -u ai_user:BCjfTYIIjMASFGVM \
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://ai.nrupalakolkar.com/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5:14b","messages":[{"role":"user","content":"Hello"}],"max_tokens":100}'
+  -d '{"model":"qwen2.5:7b","messages":[{"role":"user","content":"Hello"}],"max_tokens":100}'
 ```
 
 ### RAG Query
 ```bash
-curl -u rag_user:BCjfTYIIjMASFGVM \
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://rag.nrupalakolkar.com/query \
   -H "Content-Type: application/json" \
   -d '{"query":"What is the project structure?","use_rag":true,"top_k":5,"threshold":0.7}'
@@ -89,14 +82,14 @@ curl -u rag_user:BCjfTYIIjMASFGVM \
 
 ### RAG Upload
 ```bash
-curl -u rag_user:BCjfTYIIjMASFGVM \
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://rag.nrupalakolkar.com/ingest/file \
   -F "file=@document.pdf"
 ```
 
 ### Workflow
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM \
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://agents.nrupalakolkar.com/api/workflow/run \
   -H "Content-Type: application/json" \
   -d '{"task":"Analyze the architecture","max_iterations":3,"use_reasoning":true}'
@@ -104,76 +97,78 @@ curl -u dev_user:BCjfTYIIjMASFGVM \
 
 ### Agent Status
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://agents.nrupalakolkar.com/api/agents/status
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://agents.nrupalakolkar.com/api/agents/status
 ```
 
 ### Orchestrator State
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://agents.nrupalakolkar.com/api/orchestrator/state
-curl -u dev_user:BCjfTYIIjMASFGVM https://agents.nrupalakolkar.com/api/orchestrator/forecast
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://agents.nrupalakolkar.com/api/orchestrator/state
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://agents.nrupalakolkar.com/api/orchestrator/forecast
 ```
 
 ### MCP Tools
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://agents.nrupalakolkar.com/api/mcp/tools
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://agents.nrupalakolkar.com/api/mcp/tools
 ```
 
 ### A2A Messages
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://agents.nrupalakolkar.com/api/a2a/messages
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://agents.nrupalakolkar.com/api/a2a/messages
 ```
 
 ### Dev Sandbox
 ```bash
 # System logs
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/dev/logs
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/dev/logs
 
 # Configuration
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/dev/config
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/dev/config
 
 # Metrics
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/dev/metrics
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/dev/metrics
 ```
 
 ### Knowledge Graph
 ```bash
 # Stats
-curl -u rag_user:BCjfTYIIjMASFGVM https://rag.nrupalakolkar.com/api/knowledge-graph/stats
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://rag.nrupalakolkar.com/api/knowledge-graph/stats
 
 # Entities
-curl -u rag_user:BCjfTYIIjMASFGVM "https://rag.nrupalakolkar.com/api/knowledge-graph/entities?entity_type=concept&limit=50"
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" "https://rag.nrupalakolkar.com/api/knowledge-graph/entities?entity_type=concept&limit=50"
 
 # Relations
-curl -u rag_user:BCjfTYIIjMASFGVM https://rag.nrupalakolkar.com/api/knowledge-graph/relations
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://rag.nrupalakolkar.com/api/knowledge-graph/relations
 ```
 
 ### Circuit Breakers
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/coordinator/circuits
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/coordinator/circuits
 ```
 
-## Tunnel & Proxy
+## Tunnel & Access
 
 ### Cloudflare Tunnel
+cloudflared points straight at the loopback core (`http://127.0.0.1:8080`); there is no
+nginx. The public hostname `core.nrupalakolkar.com` is gated by Cloudflare Access.
 ```bash
 # Check tunnel status
 cloudflared tunnel list
 
 # Restart tunnel
-cloudflared tunnel restart 267e8c28-...
+cloudflared tunnel restart <tunnel-id>
 
 # View tunnel logs
-cloudflared tunnel logs 267e8c28-...
+cloudflared tunnel logs <tunnel-id>
+
+# Restart the tunnel service
+systemctl restart cloudflared
 ```
 
-### Nginx
-```bash
-# Test configuration
-nginx -t
-
-# Reload config
-nginx -s reload
-```
+### Cloudflare Access
+Auth is enforced at the edge by Cloudflare Access (no HTTP Basic Auth). Manage the
+Access application and its policies / service tokens from the Cloudflare Zero Trust
+dashboard. For scripted access, mint a service token and pass it as the
+`CF-Access-Client-Id` / `CF-Access-Client-Secret` headers shown above.
 
 ## Git Workflow
 
@@ -208,14 +203,12 @@ git merge feature/my-feature
 curl -s https://dev.nrupalakolkar.com/api/health || echo "Services offline"
 ```
 
-### Clean Reset
+### Clean Restart
 ```bash
-# Full reset (preserves data)
-docker compose down
-docker compose up -d
+# Restart the native core service
+systemctl restart aetheris-core
 
-# Hard reset (⚠️ data loss)
-docker compose down -v
-docker compose build --no-cache
-docker compose up -d
+# Full reinstall (rebuilds binary, re-installs unit; preserves /etc/aetheris/core.env)
+sudo scripts/install-native.sh
+systemctl status aetheris-core
 ```
