@@ -46,7 +46,7 @@ check "ollama tags" "models" curl -s -m 10 "$BASE_LLM/api/tags"
 check "core health" "ai_connected" curl -s -m 10 "$BASE_CORE/health"
 
 echo "== core AI bridge =="
-check "core embed resolves" "768" python3 -c "import json,urllib.request as u; r=u.urlopen(u.Request('$BASE_CORE/bridge/ai/embed', data=json.dumps({'text':'health check'}).encode(), headers={'Content-Type':'application/json'})); print(len(json.load(r)['embedding']))"
+check "core embed resolves" "768" python3 -c "import json,urllib.request as u; r=u.urlopen(u.Request('$BASE_CORE/bridge/ai/embed', data=json.dumps({'content':'health check'}).encode(), headers={'Content-Type':'application/json'})); print(len(json.load(r)['embedding']))"
 check "core fusion generation" "OK" python3 -c "import json,urllib.request as u; r=u.urlopen(u.Request('$BASE_CORE/fusion/query', data=json.dumps({'query':'Reply with exactly: OK'}).encode(), headers={'Content-Type':'application/json'}), timeout=180); print(json.load(r)['answer'])"
 
 echo ""
