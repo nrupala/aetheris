@@ -5,8 +5,8 @@ core/target/
 *.dll
 *.pdb
 
-# Cargo
-Cargo.lock
+# Cargo (lockfile is committed for reproducible binary builds)
+# Cargo.lock
 
 # Environment
 .env
