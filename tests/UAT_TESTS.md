@@ -1,6 +1,12 @@
 # AETHERIS - USER ACCEPTANCE TESTING (UAT) SUITE
 ## v1.0 - PRODUCTION VALIDATION
 
+> **RETIRED (Docker -> native cutover).** The Docker/compose-based UAT that drove this
+> suite (the `uat.yml` GitHub Actions workflow and `compose.emulation.yaml`) has been
+> removed. Aetheris Core now runs natively under `systemd` - see
+> [`docs/DEPLOY_NATIVE.md`](../docs/DEPLOY_NATIVE.md). The container-based procedure
+> below is retained for historical reference only.
+
 ---
 
 ## UAT PHILOSOPHY

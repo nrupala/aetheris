@@ -1,5 +1,12 @@
 # Aetheris Bare Metal Emulation
 
+> **RETIRED (Docker -> native cutover).** This Docker-Compose emulation harness is no
+> longer used. Aetheris Core now deploys natively under `systemd` with no Docker, no
+> compose, and no nginx - see [`docs/DEPLOY_NATIVE.md`](../DEPLOY_NATIVE.md). The
+> `compose.emulation.yaml` this guide referenced (and the `uat.yml` workflow that drove
+> it) have been removed. Everything below is kept for historical reference only and will
+> not run as written.
+
 This directory contains Docker-based infrastructure that emulates a bare metal deployment of Aetheris for testing purposes.
 
 ## Overview

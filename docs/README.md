@@ -19,7 +19,7 @@ sudo scripts/install-native.sh
 | Document | Description |
 |----------|-------------|
 | [Architecture Overview](architecture/overview.md) | System design, network topology, component architecture, data flows |
-| [Emulation Environment](architecture/emulation.md) | Docker-based bare metal emulation for testing |
+| [Emulation Environment](architecture/emulation.md) | Retired Docker-based bare metal emulation (historical; core now deploys natively) |
 | [Port Allocation](architecture/port-allocation.md) | Dynamic port allocation and service discovery |
 
 ### API Reference

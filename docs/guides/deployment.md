@@ -2,9 +2,16 @@
 
 ## Overview
 
-This guide covers deploying Aetheris RAG in production, development, and local environments.
+This guide covers deploying the Aetheris **RAG / LLMVM subsystem** in production, development, and local environments.
 
-**Target Platforms**: Ubuntu 22.04+, Debian 12, Docker-enabled systems  
+> **Deploying the Aetheris core?** The core is not deployed with Docker. After the
+> Docker -> native cutover it runs as a native `systemd` service — install it with
+> `sudo scripts/install-native.sh` and expose it via cloudflared + Cloudflare Access.
+> See [`DEPLOY_NATIVE.md`](../DEPLOY_NATIVE.md) for the canonical core deployment. The
+> Docker Compose stack documented below is the RAG / LLMVM container subsystem, which
+> legitimately retains its own container runtime — it is not the core deploy.
+
+**Target Platforms**: Ubuntu 22.04+, Debian 12 (RAG subsystem: Docker-enabled hosts; core: native systemd)  
 **Minimum Resources**: 8GB RAM, 4 CPU cores, 50GB storage  
 **Recommended**: 16GB RAM, 8 CPU cores, 200GB storage
 
@@ -59,7 +66,7 @@ graph TB
 
 ---
 
-## Docker Compose Deployment (Recommended)
+## Docker Compose Deployment (RAG / LLMVM subsystem)
 
 ### Step 1: Clone Repository
 
