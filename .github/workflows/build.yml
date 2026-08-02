@@ -118,7 +118,7 @@ jobs:
           name: aetheris-core-${{ matrix.target }}
           path: core/target/${{ matrix.target }}/release/aetheris-core
 
-    security-scan:
+  security-scan:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
