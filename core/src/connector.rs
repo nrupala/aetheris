@@ -5,10 +5,20 @@ pub struct AetherisConnector {
     pub ai_url: String,
     pub opa_url: String,
     pub vault_path: String,
+    pub fallback_model: String,
 }
 
 #[allow(dead_code)]
 impl AetherisConnector {
+    pub fn from_config(config: &crate::config::Config) -> Self {
+        Self {
+            ai_url: config.ai_endpoint.clone(),
+            opa_url: config.opa_endpoint.clone(),
+            vault_path: config.vault_path.to_string_lossy().to_string(),
+            fallback_model: config.fallback_model.clone(),
+        }
+    }
+
     pub async fn authorize(&self, peer_id: &str, action: &str) -> bool {
         let client = crate::util::http_client();
         let body = json!({
@@ -41,7 +51,7 @@ impl AetherisConnector {
     }
 
     pub async fn ai_query(&self, prompt: &str, model: Option<&str>) -> Result<String, String> {
-        let model = model.unwrap_or("qwen2.5:14b");
+        let model = model.unwrap_or(&self.fallback_model);
         let client = crate::util::http_client();
         let payload = json!({
             "model": model,
@@ -124,24 +134,26 @@ impl AetherisConnector {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_connector_initialization() {
-        let connector = AetherisConnector {
+    fn test_connector() -> AetherisConnector {
+        AetherisConnector {
             ai_url: "http://localhost:1234".to_string(),
             opa_url: "http://localhost:8181".to_string(),
             vault_path: "/data/vault".to_string(),
-        };
+            fallback_model: "qwen2.5:7b".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_connector_initialization() {
+        let connector = test_connector();
         assert_eq!(connector.ai_url, "http://localhost:1234");
         assert_eq!(connector.opa_url, "http://localhost:8181");
+        assert_eq!(connector.fallback_model, "qwen2.5:7b");
     }
 
     #[test]
     fn test_ai_url_endpoint_construction() {
-        let connector = AetherisConnector {
-            ai_url: "http://localhost:1234".to_string(),
-            opa_url: "http://localhost:8181".to_string(),
-            vault_path: "/data/vault".to_string(),
-        };
+        let connector = test_connector();
         let embeddings_url = format!("{}/v1/embeddings", connector.ai_url);
         let chat_url = format!("{}/v1/chat/completions", connector.ai_url);
         let models_url = format!("{}/v1/models", connector.ai_url);
@@ -152,12 +164,8 @@ mod tests {
 
     #[test]
     fn test_opa_url_construction() {
-        let connector = AetherisConnector {
-            ai_url: "http://localhost:1234".to_string(),
-            opa_url: "http://opa:8181".to_string(),
-            vault_path: "/data/vault".to_string(),
-        };
-        assert_eq!(connector.opa_url, "http://opa:8181");
+        let connector = test_connector();
+        assert_eq!(connector.opa_url, "http://localhost:8181");
     }
 
     #[test]
@@ -188,12 +196,12 @@ mod tests {
     #[test]
     fn test_ai_query_payload_with_default_model() {
         let payload = json!({
-            "model": "qwen2.5:14b",
+            "model": "qwen2.5:7b",
             "messages": [{"role": "user", "content": "test prompt"}],
             "temperature": 0.1,
             "stream": false
         });
-        assert_eq!(payload["model"], "qwen2.5:14b");
+        assert_eq!(payload["model"], "qwen2.5:7b");
         assert_eq!(payload["temperature"], 0.1);
         assert_eq!(payload["stream"], false);
     }
@@ -201,12 +209,12 @@ mod tests {
     #[test]
     fn test_ai_query_payload_with_custom_model() {
         let payload = json!({
-            "model": "qwen2.5-coder-14b",
+            "model": "qwen2.5-coder:7b",
             "messages": [{"role": "user", "content": "test prompt"}],
             "temperature": 0.1,
             "stream": false
         });
-        assert_eq!(payload["model"], "qwen2.5-coder-14b");
+        assert_eq!(payload["model"], "qwen2.5-coder:7b");
     }
 
     #[test]
@@ -251,6 +259,7 @@ mod tests {
             ai_url: "http://localhost:1234".to_string(),
             opa_url: "http://localhost:99999".to_string(),
             vault_path: "/data/vault".to_string(),
+            fallback_model: "qwen2.5:7b".to_string(),
         };
         let result = connector.authorize("peer-1", "read").await;
         assert!(!result);
@@ -262,6 +271,7 @@ mod tests {
             ai_url: "http://localhost:99999".to_string(),
             opa_url: "http://localhost:8181".to_string(),
             vault_path: "/data/vault".to_string(),
+            fallback_model: "qwen2.5:7b".to_string(),
         };
         let result = connector.ai_query("test", None).await;
         assert!(result.is_err());
@@ -273,6 +283,7 @@ mod tests {
             ai_url: "http://localhost:99999".to_string(),
             opa_url: "http://localhost:8181".to_string(),
             vault_path: "/data/vault".to_string(),
+            fallback_model: "qwen2.5:7b".to_string(),
         };
         let result = connector.list_models().await;
         assert!(result.is_err());
@@ -280,15 +291,15 @@ mod tests {
 
     #[test]
     fn test_default_model_fallback() {
-        let model: Option<&str> = None;
-        let resolved = model.unwrap_or("qwen2.5:14b");
-        assert_eq!(resolved, "qwen2.5:14b");
+        let connector = test_connector();
+        let resolved = None.unwrap_or(&connector.fallback_model);
+        assert_eq!(resolved, "qwen2.5:7b");
     }
 
     #[test]
     fn test_custom_model_override() {
-        let model: Option<&str> = Some("custom-model");
-        let resolved = model.unwrap_or("qwen2.5:14b");
+        let connector = test_connector();
+        let resolved = Some("custom-model").unwrap_or(&connector.fallback_model);
         assert_eq!(resolved, "custom-model");
     }
 }

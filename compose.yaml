@@ -163,6 +163,8 @@ services:
       - OPA_ENDPOINT=http://opa-gateway:8181
       - VAULT_PATH=/data/vault
       - DISCOVERY_REGISTRY_PATH=/etc/aetheris/port_registry.json
+      - AI_MODEL=${AETHERIS_FALLBACK_MODEL:-qwen2.5:7b}
+      - AETHERIS_EMBED_FALLBACK_MODEL=${AETHERIS_EMBED_FALLBACK_MODEL:-nomic-embed-text}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://127.0.0.1:8080/health"]

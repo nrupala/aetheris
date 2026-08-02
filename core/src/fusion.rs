@@ -255,6 +255,7 @@ pub struct FusionRouter {
     pub openrouter: Option<Arc<OpenRouterBridge>>,
     pub exasearch: Option<Arc<ExaSearchBridge>>,
     pub key_manager: Arc<KeyManager>,
+    pub fallback_model: String,
 }
 
 impl Clone for FusionRouter {
@@ -264,6 +265,7 @@ impl Clone for FusionRouter {
             openrouter: self.openrouter.clone(),
             exasearch: self.exasearch.clone(),
             key_manager: self.key_manager.clone(),
+            fallback_model: self.fallback_model.clone(),
         }
     }
 }
@@ -274,12 +276,14 @@ impl FusionRouter {
         openrouter: Option<Arc<OpenRouterBridge>>,
         exasearch: Option<Arc<ExaSearchBridge>>,
         key_manager: Arc<KeyManager>,
+        fallback_model: String,
     ) -> Self {
         Self {
             ollama,
             openrouter,
             exasearch,
             key_manager,
+            fallback_model,
         }
     }
 
@@ -289,7 +293,7 @@ impl FusionRouter {
     }
 
     pub async fn smart_query(&self, user_query: &str) -> Result<String, String> {
-        let local_result = self.ollama.query(user_query, "qwen2.5:14b").await?;
+        let local_result = self.ollama.query(user_query, &self.fallback_model).await?;
 
         if let Some(openrouter) = &self.openrouter {
             if openrouter.api_key().is_some() {
@@ -318,7 +322,10 @@ impl FusionRouter {
                         "Answer this question based on the provided search results:\n\nQuestion: {}\n\nSearch Results: {}\n\nProvide a comprehensive answer with citations.",
                         query, context
                     );
-                    return self.ollama.query(&synthesis_prompt, "qwen2.5:14b").await;
+                    return self
+                        .ollama
+                        .query(&synthesis_prompt, &self.fallback_model)
+                        .await;
                 }
             }
         }
