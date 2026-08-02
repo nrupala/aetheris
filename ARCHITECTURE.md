@@ -41,6 +41,13 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Public application ingress (native deploy):** the Aetheris core is reachable at
+`core.nrupalakolkar.com` through a **Cloudflare Tunnel** (outbound-only — no inbound
+port is opened) with **Cloudflare Access** gating identity at the edge. `cloudflared`
+connects to the core on `127.0.0.1:8080`; Ollama stays loopback-only on
+`127.0.0.1:11434`. There is no nginx and no Docker — every component runs as a native
+`systemd` service.
+
 ---
 
 ## 3. COMPONENT ARCHITECTURE
@@ -74,7 +81,7 @@
 └─────────────────────────────────────────┘
 ```
 
-### 3.2 Container Stack
+### 3.2 Runtime Topology (Native systemd)
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    AETHERIS MESH                            │
@@ -430,9 +437,9 @@ Response:
 ├── monitoring/
 │   ├── zrepl.yml
 │   └── sentinel_dashboard.json
-├── docker-compose.yaml
-├── docker-compose.ghost.yaml
-├── Dockerfile.core
+├── infra/systemd/aetheris-core.service
+├── config/core.env.example
+├── scripts/install-native.sh
 ├── state.json
 └── tests/
     └── tests.json
@@ -448,7 +455,7 @@ Response:
 | Component | Version | Notes |
 |-----------|---------|-------|
 | Rust | 1.75+ | MUSL static target |
-| Docker | Latest | ZFS storage driver |
+| systemd | — | Native service manager |
 | ZFS | 2.1+ | Native encryption |
 | WireGuard | Latest | Kernel module |
 | OPA | Latest | v1.x API |
@@ -456,7 +463,7 @@ Response:
 | ChromaDB | Latest | Vector DB |
 | VictoriaMetrics | Latest | Time-series |
 | zrepl | Latest | Snapshotting |
-| Distroless | debian12 | Minimal base |
+| cloudflared | Latest | Tunnel + Cloudflare Access |
 
 ---
 

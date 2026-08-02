@@ -652,7 +652,7 @@ The LLMVM (LLM Virtual Machine) is the AI brain of Aetheris. It is a self-contai
 | Backend | Type | Config |
 |---------|------|--------|
 | LMStudio | Local (OpenAI-compatible) | `http://host.docker.internal:1234` |
-| Ollama | Local Docker | `http://ollama:11434` |
+| Ollama | Local (loopback) | `http://127.0.0.1:11434` |
 | GPT4All | Local | Native Python library |
 | OpenAI | Remote (optional) | API key required |
 | Anthropic | Remote (optional) | API key required |
@@ -759,7 +759,7 @@ Set environment variables before starting the orchestrator:
 ```bash
 # Add Llama 3.2 via Ollama
 export DEFAULT_MODEL="llama3.2"
-export LMSTUDIO_ENDPOINT="http://ollama:11434"
+export LMSTUDIO_ENDPOINT="http://127.0.0.1:11434"
 
 # Add fallback to GPT4All CPU model
 export FALLBACK_MODEL="mistral-7b-instruct"
@@ -798,7 +798,7 @@ router = ModelRouter([
 | Provider | Enum Value | Endpoint Pattern | Capabilities |
 |----------|-----------|-----------------|--------------|
 | LMStudio | `Provider.LMSTUDIO` | `http://host:1234/v1` | chat, embedding, structured_output |
-| Ollama | `Provider.OLLAMA` | `http://ollama:11434/v1` | chat, embedding |
+| Ollama | `Provider.OLLAMA` | `http://127.0.0.1:11434/v1` | chat, embedding |
 | GPT4All | `Provider.GPT4ALL` | `http://host:4891/v1` | chat |
 | OpenAI | `Provider.OPENAI` | `https://api.openai.com/v1` | chat, vision, structured_output, tool_use |
 | Anthropic | `Provider.ANTHROPIC` | `https://api.anthropic.com/v1` | chat, tool_use |

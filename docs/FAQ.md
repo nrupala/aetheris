@@ -11,36 +11,39 @@ The core services run at $0/month — everything is local. The only potential co
 ### What hardware do I need?
 - **Minimum:** 4 CPU cores, 8GB RAM, 20GB storage
 - **Recommended:** 8 CPU cores, 16GB RAM, 100GB+ storage (SSD)
-- **For LLM:** qwen2.5:14b requires ~8GB RAM just for the model
+- **For LLM:** qwen2.5:7b requires ~5GB RAM just for the model
 
 ## Access & Authentication
 
-### I get "401 Unauthorized" — what's the password?
-All users share the same password: `BCjfTYIIjMASFGVM`. The usernames are:
-- `ai_user` for AI chat
-- `rag_user` for RAG document Q&A
-- `dev_user` for Agent Dashboard and Dev Sandbox
+### I get "401 Unauthorized" / "403 Forbidden" — how do I authenticate?
+Access is gated by **Cloudflare Access** at the edge (no HTTP Basic Auth). Interactive users sign in with their identity; scripted/API callers send a Cloudflare Access **service token** as headers:
+```bash
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+     https://core.nrupalakolkar.com/api/health
+```
+The token values live in your environment / secret store — never in this repo.
 
-### The password doesn't work. What should I do?
-The password is configured via Nginx `htpasswd`. Contact your admin to verify the environment variable `NGINX_BASIC_AUTH` in Docker Compose.
+### Access is denied. What should I do?
+Confirm your identity (or service token) is allowed by the Cloudflare Access policy for the application. Manage policies and service tokens from the Cloudflare Zero Trust dashboard.
 
-### Can I change the password?
-Yes. Generate a new htpasswd hash and update the `NGINX_BASIC_AUTH` environment variable, then restart nginx.
+### Can I change who has access?
+Yes — edit the Cloudflare Access application's policy (add/remove emails, rotate the service token). No `htpasswd` and no service restart required.
 
 ## AI
 
 ### What model is Aetheris using?
-The production server runs a single model: `qwen2.5:14b` — a 14 billion parameter model from the Qwen 2.5 family.
+The production server runs a single model: `qwen2.5:7b` — a 7 billion parameter model from the Qwen 2.5 family.
 
 ### Can I use a different model?
 If Ollama has the model loaded, you can select it from the dropdown in the AI Chat UI. To pull a new model:
 ```bash
-docker compose exec ollama ollama pull <model-name>
+ollama pull <model-name>
 ```
 
 ### Why is the AI slow?
 Response time depends on:
-- Model size (qwen2.5:14b is 14B parameters)
+- Model size (qwen2.5:7b is 7B parameters)
 - Available RAM/VRAM
 - Concurrent requests
 - Prompt length (longer prompts = slower generation)
@@ -79,8 +82,9 @@ It runs multi-agent workflows with a pipeline: **Planner → Researcher → Code
 ### How do I run a workflow?
 Go to the Agents dashboard (`https://agents.nrupalakolkar.com`), open the Workflow tab, describe your task, and click Run. Or use the API:
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM \
-  https://agents.nrupalakolkar.com/api/workflow/run \
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+     https://agents.nrupalakolkar.com/api/workflow/run \
   -H "Content-Type: application/json" \
   -d '{"task": "Your task here"}'
 ```
@@ -112,44 +116,39 @@ The Dev Sandbox (`https://dev.nrupalakolkar.com`) provides a browser-based inter
 ### How do I deploy Aetheris?
 ```bash
 git clone <repo>
-docker compose build
-docker compose up -d
+sudo scripts/install-native.sh
 ```
-For detailed instructions, see the [Deployment Guide](guides/deployment.md).
+The core runs as a native systemd service; cloudflared points at `127.0.0.1:8080` and Cloudflare Access gates the public hostname. For detailed instructions, see the [Native Deployment Guide](DEPLOY_NATIVE.md).
 
 ### What ports need to be open?
-Only the Cloudflare Tunnel needs outbound access. All service ports (8080, 11434, 9090) are internal to Docker.
+None inbound. Only the Cloudflare Tunnel needs outbound access. All service ports (8080, 11434, 9090) are bound to loopback (`127.0.0.1`) on the host.
 
 ### How do I update Aetheris?
 ```bash
 git pull
-docker compose build core
-docker compose up -d --force-recreate core
+sudo scripts/install-native.sh   # rebuilds the binary and restarts the service
 ```
 
 ### How do I back up my data?
 ```bash
-# RAG data
-docker cp <rag-container>:/app/data ./backups/rag/
-
-# WAL (audit log)
-cp -r /path/to/vault/wal/ ./backups/wal/
+# RAG data + WAL (audit log) live under the vault directory
+cp -r /data/vault/ ./backups/vault/
 ```
 
 ## Troubleshooting
 
 ### I get "502 Bad Gateway"
-Likely the backend service is down. Check:
+Likely the core service is down. Check:
 ```bash
-docker compose ps
-docker compose logs core
+systemctl status aetheris-core
+journalctl -u aetheris-core -n 100
 ```
 
 ### The health check fails
 ```bash
-curl -u dev_user:BCjfTYIIjMASFGVM https://dev.nrupalakolkar.com/api/health
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.nrupalakolkar.com/api/health
 ```
-If it returns an error, check Docker service status.
+If it returns an error, check the `aetheris-core` service status.
 
 ### Cloudflare Tunnel is down
 ```bash
@@ -163,7 +162,6 @@ Open an issue at the repository or report it via the project's issue tracker.
 
 ### How do I reset everything?
 ```bash
-docker compose down -v   # ⚠️ This deletes ALL data
-docker compose build --no-cache
-docker compose up -d
+sudo systemctl restart aetheris-core     # restart only
+sudo scripts/install-native.sh           # rebuild + reinstall (keeps /etc/aetheris/core.env)
 ```

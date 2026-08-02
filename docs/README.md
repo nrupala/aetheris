@@ -9,8 +9,8 @@
 cd core && cargo build --release
 ./target/release/aetheris
 
-# Full stack with Docker
-docker compose up -d
+# Native install (systemd, no Docker)
+sudo scripts/install-native.sh
 ```
 
 ## Documentation Map

@@ -133,7 +133,7 @@ No heavy vector databases (Milvus, Pinecone). Uses SQLite + numpy.
 ## Limitations
 
 ### ⚠️ No Authentication (Currently)
-The RAG endpoint is **open** — anyone who knows the URL can query it. A password (`H5epZhriylz+99+1`) is configured but not yet enforced.
+The RAG endpoint is fronted by Cloudflare Access at the tunnel edge (identity-gated; no static credentials). Application-level auth is not yet enforced in the service itself.
 
 ### ⚠️ Requires LMStudio
 Embeddings and generation both call LMStudio. If LMStudio is down, RAG returns errors.
@@ -155,8 +155,8 @@ Text embeddings only. No image or video understanding.
 
 ---
 
-## Password
-`H5epZhriylz+99+1` (configured, not yet enforced at tunnel level)
+## Access
+Cloudflare Access (identity-gated at the tunnel edge; no static credentials).
 
 ## Architecture
 ```

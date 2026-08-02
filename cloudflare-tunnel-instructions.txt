@@ -11,7 +11,7 @@
 
 ### 3. Find Your Existing Tunnel
 - Look for the tunnel named "llmvm-tunnel" 
-- It should have the Tunnel ID: `267e8c28-fc70-4a0d-9c65-1790d6b14477`
+- It should have your Cloudflare Tunnel ID (from your own Cloudflare Zero Trust account).
 
 ### 4. Add Public Hostname
 - Click on your tunnel name
@@ -35,10 +35,10 @@
 - It may take 1-2 minutes for the hostname to become active
 - You can test by accessing: https://agents.nrupalakolkar.com
 
-### 8. Verify Basic Auth (If Configured)
-- If you have basic auth configured in your Nginx config, you'll need to provide:
-  - Username: `user` (or whatever you set)
-  - Password: `H5epZhriylz+99+1` (from your .env file)
+### 8. Access is via Cloudflare Access
+- There is no HTTP Basic Auth. Gate the hostname with a Cloudflare Access application
+  (identity policy for interactive users, service token for API/automation).
+- No static credentials are stored in this repo.
 
 ### Alternative: Using cloudflared CLI
 If you prefer CLI, run:

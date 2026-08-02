@@ -186,11 +186,11 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
       </div>
       <div>
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Query Model</label>
-        <input id="rag-query-model" type="text" value="qwen2.5:14b" style="width:100%;font-family:monospace;">
+        <input id="rag-query-model" type="text" value="qwen2.5:7b" style="width:100%;font-family:monospace;">
       </div>
       <div style="grid-column:1/-1;">
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Embedding Models (ordered fallback, comma-separated)</label>
-        <input id="rag-embed-models" type="text" value="nomic-embed-text, phi-4-reasoning-plus-q4_k_m, qwen2.5:14b" style="width:100%;font-family:monospace;">
+        <input id="rag-embed-models" type="text" value="nomic-embed-text, phi-4-reasoning-plus-q4_k_m, qwen2.5:7b" style="width:100%;font-family:monospace;">
       </div>
       <div style="grid-column:1/-1;">
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Reranker Model</label>
@@ -258,7 +258,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
       <input id="embed-test-text" type="text" placeholder="Text to embed..." style="flex:1;">
       <button class="btn btn-secondary" onclick="testEmbedding('nomic-embed-text')">nomic-embed-text</button>
       <button class="btn btn-secondary" onclick="testEmbedding('phi-4-reasoning-plus-q4_k_m')">Phi-4-Reasoning</button>
-      <button class="btn btn-secondary" onclick="testEmbedding('qwen2.5:14b')">qwen2.5:14b</button>
+      <button class="btn btn-secondary" onclick="testEmbedding('qwen2.5:7b')">qwen2.5:7b</button>
     </div>
     <pre id="embed-test-result" style="margin-top:0.5rem;max-height:150px;">Click a model to test embedding.</pre>
   </div>
@@ -311,7 +311,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
     <h3>Access</h3>
     <ul>
       <li><strong>URL:</strong> <code>https://dev.nrupalakolkar.com</code></li>
-      <li><strong>Auth:</strong> HTTP Basic Auth — <code>dev_user</code> / <code>BCjfTYIIjMASFGVM</code></li>
+      <li><strong>Auth:</strong> Cloudflare Access (identity-gated; no static credentials)</li>
       <li><strong>Connection:</strong> Cloudflare Tunnel (encrypted, no open ports)</li>
     </ul>
 
@@ -375,7 +375,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
     <p>List available AI models from Ollama with IDs and metadata.</p>
 
     <h3>Architecture</h3>
-    <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy)
+    <pre><code>Browser → Cloudflare Edge (Access) → Tunnel → Aetheris Core (:8080)
   → Rust Core (:8080) — API gateway, agents, file ops
     → Python Orchestrator (:9090) — RAG, KG, cross-system features (optional)
       → Ollama (:11434) — Local LLM inference</code></pre>
@@ -390,8 +390,8 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
     <h3>Infrastructure</h3>
     <ul>
       <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
-      <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
-      <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+      <li><strong>Tunnel:</strong> Cloudflare Tunnel v2</li>
+      <li><strong>Access:</strong> Cloudflare Access (identity-gated)</li>
       <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
       <li><strong>Orchestrator:</strong> Python FastAPI + Uvicorn on port 9090</li>
       <li><strong>AI Runtime:</strong> Ollama API server on port 11434</li>
@@ -400,7 +400,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
 </div>
 
 <script>
-// Strip /api/ prefix when running locally (no nginx rewrite available)
+// Strip /api/ prefix when running locally (no Access proxy rewrite available)
 function apiPath(path) {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (isLocal && path.startsWith('api/')) return path.substring(4);
@@ -584,7 +584,7 @@ async function loadRagConfig() {
     document.getElementById('rag-chunk-overlap').value = cfg.chunk_overlap || 64;
     document.getElementById('rag-top-k').value = cfg.top_k || 5;
     document.getElementById('rag-query-model').value = cfg.query_model || 'qwen3:8b';
-    document.getElementById('rag-embed-models').value = (cfg.embed_models || ['nomic-embed-text', 'deepseek-r1:8b', 'qwen3:8b']).join(', ');
+    document.getElementById('rag-embed-models').value = (cfg.embed_models || ['nomic-embed-text', 'qwen3:8b']).join(', ');
     document.getElementById('rag-reasoning').checked = cfg.reasoning_enabled || false;
     document.getElementById('rag-reranker-model').value = cfg.reranker_model || 'bge-reranker-v2-m3';
     document.getElementById('rag-reranker-enabled').checked = cfg.reranker_enabled !== false;

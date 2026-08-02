@@ -161,7 +161,7 @@
             </ul>
 
             <h3>Architecture</h3>
-            <pre><code>Browser → Cloudflare Edge → Tunnel → Nginx (auth + proxy)
+            <pre><code>Browser → Cloudflare Edge (Access) → Tunnel → Aetheris Core (:8080)
   → Rust Core (:8080) — Agent orchestrator, MCP, A2A, workflow engine
     → Python Orchestrator (:9090) — Cross-engine state (optional)
       → Ollama (:11434) — LLM inference for all agents</code></pre>
@@ -261,10 +261,10 @@
             <h3>Infrastructure</h3>
             <ul>
                 <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
-                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2 (ID: 267e8c28)</li>
-                <li><strong>Proxy:</strong> Nginx Alpine with HTTP Basic Auth</li>
+                <li><strong>Tunnel:</strong> Cloudflare Tunnel v2</li>
+                <li><strong>Access:</strong> Cloudflare Access (identity-gated)</li>
                 <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
-                <li><strong>AI Runtime:</strong> Ollama API server on port 11434 (single model: qwen2.5:14b)</li>
+                <li><strong>AI Runtime:</strong> Ollama API server on port 11434 (single model: qwen2.5:7b)</li>
                 <li><strong>Cross-Engine:</strong> Python FastAPI + Uvicorn on port 9090 (optional)</li>
                 <li><strong>Navigation:</strong> Cloudflare Tunnel's browser-based rendering enables subdomain routing</li>
             </ul>

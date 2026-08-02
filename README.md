@@ -1,57 +1,60 @@
 # Aetheris — Sovereign AI-Native Personal Cloud
 
-Zero-trust personal cloud with AI-powered policy enforcement, secure storage, multi-agent orchestration, and local LLM inference. Built with Rust (Axum), OPA, Ollama, and Docker.
+Zero-trust personal cloud with AI-powered policy enforcement, secure storage, multi-agent orchestration, and local LLM inference. Built with Rust (Axum), OPA, and Ollama; deployed natively (systemd) behind Cloudflare Access — no Docker.
 
 ## Architecture
 
 ```
-Browser → Cloudflare Tunnel → Nginx (auth + proxy) → Rust Core (:8080)
-  ├── Ollama (:11434) — Local LLM inference (qwen2.5:7b default)
-  └── Python Orchestrator (:9090) — RAG pipeline, KG (optional, --profile llmvm)
+Browser → Cloudflare Access (edge auth) → Cloudflare Tunnel → cloudflared → aetheris-core (127.0.0.1:8080)
+  ├── Ollama (127.0.0.1:11434) — Local LLM inference (qwen2.5:7b default)
+  └── Python Orchestrator (127.0.0.1:9090) — RAG pipeline, KG (optional, --profile llmvm)
 ```
 
 ## Quick Start
 
 ### Prerequisites
-- Rust 1.75+
-- Docker + Docker Compose v2
+- Rust 1.75+ (with the matching musl target; the installer adds it)
 - A Linux server (production) or local machine (development)
+- Ollama on `127.0.0.1:11434` with `qwen2.5:7b` + `nomic-embed-text` pulled
+- `cloudflared` (for the public tunnel) — optional for local dev
 
 ### Local Development
 ```bash
 cd core
 cargo build --release
-./target/release/aetheris
+./target/release/aetheris-core
 ```
 
-### Docker Stack
+### Native Deploy (no Docker)
+The core runs as a native `systemd` service. cloudflared points straight at the
+loopback core and Cloudflare Access gates the public hostname.
 ```bash
-docker compose build
-docker compose up -d
-
-# With LLMVM (agent orchestrator + RAG)
-docker compose --profile llmvm up -d
+sudo scripts/install-native.sh
+systemctl status aetheris-core
 ```
+See **[docs/DEPLOY_NATIVE.md](docs/DEPLOY_NATIVE.md)** for the full runbook (build,
+install, cloudflared ingress, Cloudflare Access, verification, teardown, rollback).
 
-## Subdomains
+## Hostnames
 
 | Domain | Purpose | Auth |
 |--------|---------|------|
-| dev.nrupalakolkar.com | Dev Sandbox — API Console, logs, config, metrics | `dev_user` |
-| ai.nrupalakolkar.com | AI Chat — local LLM inference | `ai_user` |
-| rag.nrupalakolkar.com | Document Q&A — RAG pipeline | `rag_user` |
-| agents.nrupalakolkar.com | Agent Orchestrator — multi-agent workflows | `dev_user` |
+| core.nrupalakolkar.com | Aetheris Core — API + web UIs | Cloudflare Access |
+| dev.nrupalakolkar.com | Dev Sandbox — API Console, logs, config, metrics | Cloudflare Access |
+| ai.nrupalakolkar.com | AI Chat — local LLM inference | Cloudflare Access |
+| rag.nrupalakolkar.com | Document Q&A — RAG pipeline | Cloudflare Access |
+| agents.nrupalakolkar.com | Agent Orchestrator — multi-agent workflows | Cloudflare Access |
 
-All auth users share the password: `BCjfTYIIjMASFGVM`
+Access is identity-gated by Cloudflare Access at the edge — there is no shared password. Automation uses a Cloudflare Access service token (`CF-Access-Client-Id` / `CF-Access-Client-Secret` headers).
 
-## Services
+## Services (native systemd)
 
-| Service | Container | Port | Description |
-|---------|-----------|------|-------------|
-| Core | aetheris_core | 8080 | Rust Axum API server |
-| Nginx | aetheris_nginx | 443 | Reverse proxy + HTTP Basic Auth |
-| Ollama | aetheris_ollama | 11434 | Local LLM inference (qwen2.5:7b default) |
-| Orchestrator | aetheris_orchestrator | 9090 | RAG pipeline, KG (LLMVM profile) |
+| Service | Unit | Port | Description |
+|---------|------|------|-------------|
+| Core | aetheris-core | 127.0.0.1:8080 | Rust Axum API server |
+| Tunnel | cloudflared | — | Cloudflare Tunnel + Access (edge TLS/auth) |
+| Ollama | ollama | 127.0.0.1:11434 | Local LLM inference (qwen2.5:7b default) |
+| Orchestrator | (llmvm profile) | 127.0.0.1:9090 | RAG pipeline, KG (optional) |
 
 ## Configuration
 
@@ -85,8 +88,9 @@ aetheris/
 │   └── Cargo.toml
 ├── web/                    # Subdomain HTML UIs
 ├── docs/                   # Documentation (AppDocs format)
-├── scripts/                # bootstrap.sh, verification.sh, killswitch.sh
-└── compose.yaml            # Docker Compose (+ LLMVM profile)
+├── infra/systemd/          # systemd units (native deploy)
+├── config/core.env.example # Non-secret core environment template
+└── scripts/                # install-native.sh, bootstrap.sh, verification.sh, killswitch.sh
 ```
 
 ## API Endpoints
@@ -111,14 +115,15 @@ aetheris/
 
 - **Zero-trust**: Every request evaluated by OPA policies (default deny)
 - **Local AI**: All LLM inference runs locally on Ollama — no cloud API calls
-- **Encrypted tunnel**: Cloudflare Tunnel provides TLS from browser to proxy
-- **Basic auth**: Subdomain access gated by Nginx HTTP Basic Auth
+- **Encrypted tunnel**: Cloudflare Tunnel provides TLS from browser to the loopback core
+- **Access**: Public hostnames gated by Cloudflare Access (identity-gated; no HTTP Basic Auth)
 - **WAL audit**: All file and system operations logged to append-only WAL
 
 ## Documentation
 
 See `docs/README.md` for the full documentation index. Key documents:
 
+- [Native Deployment Guide](docs/DEPLOY_NATIVE.md)
 - [Getting Started](docs/guides/getting-started.md)
 - [API Reference](docs/api-reference/README.md)
 - [Common Commands](docs/COMMANDS.md)

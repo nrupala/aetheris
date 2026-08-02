@@ -10,10 +10,10 @@ from dataclasses import dataclass, field
 @dataclass
 class RAGConfig:
     # AI endpoint (Ollama or OpenAI-compatible)
-    ai_endpoint: str = os.environ.get("AI_ENDPOINT", "http://ollama:11434")
+    ai_endpoint: str = os.environ.get("AI_ENDPOINT", "http://127.0.0.1:11434")
 
     # Default models
-    chat_model: str = os.environ.get("AI_MODEL", "qwen2.5:14b")
+    chat_model: str = os.environ.get("AI_MODEL", "qwen2.5:7b")
     embedding_model: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5")
 
     # API key for remote endpoints
@@ -31,7 +31,7 @@ class RAGConfig:
     max_history: int = int(os.environ.get("MAX_HISTORY", "10"))
 
     # Generation
-    default_model: str = os.environ.get("AI_MODEL", "qwen2.5:14b")
+    default_model: str = os.environ.get("AI_MODEL", "qwen2.5:7b")
     temperature: float = float(os.environ.get("TEMPERATURE", "0.1"))
     max_tokens: int = int(os.environ.get("MAX_TOKENS", "2048"))
     request_timeout: int = int(os.environ.get("REQUEST_TIMEOUT", "120"))
