@@ -506,19 +506,26 @@ sudo ./scripts/killswitch.sh
 
 ## 5. Deployment Options
 
-### Option 1: Single Server (Recommended for most users)
+### Option 1: Single Server (Recommended — native systemd)
 
 ```bash
 git clone https://github.com/nrupala/aetheris.git
 cd aetheris
-sudo ./scripts/bootstrap.sh
+# Build, install and enable the native aetheris-core systemd service (no Docker)
+sudo scripts/install-native.sh
 ```
 
-- One machine runs everything
+- One machine runs everything as native `systemd` services (no Docker, no nginx)
+- `cloudflared` + Cloudflare Access provide public ingress and auth
 - WireGuard connects client devices
 - ZFS for local storage + snapshots
+- Full walkthrough: [`../DEPLOY_NATIVE.md`](../DEPLOY_NATIVE.md)
 
-### Option 2: Docker Compose (Development / Testing)
+### Option 2: Docker Compose (RAG / LLMVM subsystem — dev / testing)
+
+> The **core** is not deployed with Docker (see Option 1). The commands below bring up
+> the **RAG / LLMVM container subsystem**, which retains its own container runtime for
+> local development and testing.
 
 ```bash
 # Without LLMVM (lighter)
@@ -530,13 +537,14 @@ docker compose --profile llmvm up -d
 
 ### Option 3: CI / Automated Testing
 
-Runs in GitHub Actions via UAT workflow. Verifies all services, security policies, file operations, and LLMVM integration.
+CI runs in GitHub Actions: `build.yml` compiles and tests the native Rust core. (The
+old Docker/compose UAT workflow was retired in the native cutover.)
 
 ### Option 4: ARM / Edge
 
 ```bash
-# Use ARM-compatible Dockerfiles
-docker compose -f compose.yaml -f ci-compose.yaml build
+# The native installer builds a static aarch64 binary (musl) — no Docker images needed
+sudo scripts/install-native.sh
 ```
 
 ---
@@ -594,9 +602,10 @@ sudo zfs snapshot aetheris_vault/secure_data@manual-$(date +%Y%m%d)
 # List snapshots
 sudo zfs list -t snapshot -r aetheris_vault
 
-# Update containers
-docker compose pull
-docker compose up -d
+# Update the core (native systemd)
+git pull
+sudo scripts/install-native.sh
+systemctl restart aetheris-core
 
 # Port allocation check
 bash scripts/port_allocator.sh --show

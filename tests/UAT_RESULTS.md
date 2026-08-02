@@ -1,6 +1,12 @@
 # AETHERIS - UAT RESULTS TRACKER
 ## Production Validation Results
 
+> **RETIRED (Docker -> native cutover).** These results were recorded against the old
+> Docker/compose UAT (workflow `uat.yml` + `compose.emulation.yaml`), both now removed.
+> Aetheris Core deploys natively under `systemd` - see
+> [`docs/DEPLOY_NATIVE.md`](../docs/DEPLOY_NATIVE.md). This tracker is kept for
+> historical reference only.
+
 | UAT ID | Category | Test Name | Status | Result | Date | Notes |
 |--------|----------|-----------|--------|--------|------|-------|
 | UAT-01.01 | Infrastructure | Docker Runtime | PASS | Verified | 2026-04-15 | Docker 29.x running |

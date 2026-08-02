@@ -38,7 +38,7 @@ The Agent Orchestrator is the multi-agent coordination layer of Aetheris v2.0. I
 ## Access
 
 - **URL:** `https://agents.nrupalakolkar.com`
-- **Auth:** HTTP Basic Auth (same credentials as RAG/AI)
+- **Auth:** Cloudflare Access (identity-gated at the tunnel edge; no HTTP Basic Auth)
 - **Connection:** Cloudflare Tunnel (encrypted, no open ports)
 
 ## Phase 2: Agent Orchestrator
@@ -206,7 +206,12 @@ GET  /a2a/messages                — A2A message log
 
 ## Deployment
 
-### Docker Compose
+The Aetheris **core** deploys natively under `systemd` (no Docker) — see
+[`../DEPLOY_NATIVE.md`](../DEPLOY_NATIVE.md). The agent orchestrator runs as part of
+the **LLMVM subsystem**, which legitimately retains its own container runtime; the
+compose fragment below is that subsystem's runtime, not the core deploy.
+
+### Docker Compose (LLMVM subsystem)
 
 ```yaml
 llmvm-orchestrator:
@@ -222,12 +227,14 @@ llmvm-orchestrator:
     - WORKSPACE_ROOT=/workspace
 ```
 
-### Nginx Configuration
+### Tunnel & Access (native)
 
-`agents.nrupalakolkar.com` routes to the orchestrator:
-- Static UI served from `/usr/share/nginx/html/agents/`
-- API endpoints proxied to `llmvm_orchestrator:9090`
-- HTTP Basic Auth for all access
+`agents.nrupalakolkar.com` is served through **cloudflared** pointing straight at the
+orchestrator on the loopback interface — there is no nginx reverse proxy. Identity is
+gated by **Cloudflare Access** at the edge (no HTTP Basic Auth):
+- `cloudflared` ingress: `agents.nrupalakolkar.com` -> `http://127.0.0.1:9090`
+- Static UI is served by the orchestrator process itself
+- Access policy (email + service token) enforced by Cloudflare Access
 
 ## Project Structure
 

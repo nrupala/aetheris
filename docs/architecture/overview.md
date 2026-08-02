@@ -7,7 +7,7 @@
 
 **Project Name:** Aetheris (Project Zero-Cloud)
 **Type:** Sovereign AI-Native Personal Cloud
-**Architecture:** Containerized Zero-Trust Mesh
+**Architecture:** Native systemd services over a Zero-Trust Mesh
 **Security Model:** Zero-Trust, Zero-Knowledge, Zero-Cloud
 
 ### Core Principles
@@ -43,6 +43,13 @@
 
 ---
 
+**Public application ingress (native deploy):** the Aetheris core is reachable at
+`core.nrupalakolkar.com` through a **Cloudflare Tunnel** (outbound-only — no inbound
+port is opened) with **Cloudflare Access** gating identity at the edge. `cloudflared`
+connects to the core on `127.0.0.1:8080`; Ollama stays loopback-only on
+`127.0.0.1:11434`. There is no nginx and no Docker — every component runs as a native
+`systemd` service.
+
 ## 3. COMPONENT ARCHITECTURE
 
 ### 3.1 Aetheris Core (Rust)
@@ -74,7 +81,11 @@
 └─────────────────────────────────────────┘
 ```
 
-### 3.2 Container Stack
+### 3.2 Runtime Topology (Native systemd)
+
+All components below run as native processes (systemd units / loopback services) on the
+host — not Docker containers. `cloudflared` fronts the core; there is no nginx.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    AETHERIS MESH                            │
@@ -430,9 +441,8 @@ Response:
 ├── monitoring/
 │   ├── zrepl.yml
 │   └── sentinel_dashboard.json
-├── docker-compose.yaml
-├── docker-compose.ghost.yaml
-├── Dockerfile.core
+├── infra/systemd/aetheris-core.service   # native systemd unit (no Docker)
+├── scripts/install-native.sh             # native installer
 ├── state.json
 └── tests/
     └── tests.json
@@ -447,16 +457,16 @@ Response:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| Rust | 1.75+ | MUSL static target |
-| Docker | Latest | ZFS storage driver |
+| Rust | 1.75+ | MUSL static target (single native binary) |
+| systemd | — | Native service manager (runs aetheris-core) |
+| cloudflared | Latest | Cloudflare Tunnel ingress (replaces nginx) |
 | ZFS | 2.1+ | Native encryption |
 | WireGuard | Latest | Kernel module |
 | OPA | Latest | v1.x API |
-| Ollama | Latest | Local AI |
+| Ollama | Latest | Local AI (loopback 127.0.0.1:11434) |
 | ChromaDB | Latest | Vector DB |
 | VictoriaMetrics | Latest | Time-series |
 | zrepl | Latest | Snapshotting |
-| Distroless | debian12 | Minimal base |
 
 ---
 
