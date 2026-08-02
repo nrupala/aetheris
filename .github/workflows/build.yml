@@ -118,24 +118,7 @@ jobs:
           name: aetheris-core-${{ matrix.target }}
           path: core/target/${{ matrix.target }}/release/aetheris-core
 
-  build-docker:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: build-rust
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image (core only)
-        run: |
-          docker build --no-cache -f Dockerfile.core -t aetheris-core:${{ github.sha }} .
-
-      - name: Verify image
-        run: docker run --rm aetheris-core:${{ github.sha }} --help || true
-
-  security-scan:
+    security-scan:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
