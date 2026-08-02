@@ -1,7 +1,7 @@
 use axum::{
-    body::Body,
-    extract::{Multipart, Path, Query, State},
-    http::{header, Method, StatusCode, Uri},
+    body::{Body, Bytes},
+    extract::{Host, Multipart, Path, Query, State},
+    http::{header, HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
     Json, Router,
@@ -35,7 +35,7 @@ use fusion::{ExaSearchBridge, FusionRouter, KeyManager, OpenRouterBridge};
 use guardian::Guardian;
 use kg::KnowledgeGraph;
 use mcp::MCPServer;
-use proxy::OrchestratorProxy;
+use proxy::{OpenAiProxy, OrchestratorProxy};
 use rag::VectorStore;
 
 #[derive(Debug, Clone)]
@@ -47,6 +47,7 @@ pub struct LogEntry {
 
 pub struct AppState {
     pub vault_path: std::path::PathBuf,
+    pub web_root: std::path::PathBuf,
     pub security_watcher: Arc<watcher::SecurityWatcher>,
     pub ai_url: String,
     pub opa_url: String,
@@ -60,6 +61,7 @@ pub struct AppState {
     pub mcp_server: MCPServer,
     pub agents: Mutex<Vec<Box<dyn Agent>>>,
     pub orchestrator_proxy: Option<OrchestratorProxy>,
+    pub openai_proxy: OpenAiProxy,
     pub key_manager: Arc<KeyManager>,
     pub vector_store: Option<Arc<VectorStore>>,
     pub fusion_router: Option<FusionRouter>,
@@ -77,6 +79,81 @@ async fn dashboard_handler() -> impl IntoResponse {
         .header(axum::http::header::CONTENT_TYPE, "text/html")
         .body(Body::from(html))
         .unwrap()
+}
+
+/// Serves the per-subdomain web panel from `WEB_ROOT` (e.g. `ai.nrupalakolkar.com`
+/// -> `{WEB_ROOT}/ai/index.html`). Falls back to the compiled-in dashboard when the
+/// host does not map to a panel (local health checks, apex, unknown hosts).
+async fn web_index_handler(State(state): State<Arc<AppState>>, host: Host) -> impl IntoResponse {
+    let hostname = host.0.trim().trim_end_matches('.').to_ascii_lowercase();
+    let rel = web_panel_dir(&hostname);
+    let index_path = state.web_root.join(rel).join("index.html");
+    match tokio::fs::read(&index_path).await {
+        Ok(bytes) => {
+            let mut response = Response::new(Body::from(bytes));
+            *response.status_mut() = StatusCode::OK;
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("text/html; charset=utf-8"),
+            );
+            response
+        }
+        Err(_) => dashboard_handler().await.into_response(),
+    }
+}
+
+/// Maps a request hostname to a subdirectory of `WEB_ROOT`. `ai.*` -> `ai`,
+/// `rag.*` -> `rag`, `agents.*` -> `agents`, `dev.*` -> `dev`, `guardian.*` ->
+/// `guardian`, `settings.*` -> `settings`; apex/oracle and anything else -> ""
+/// (i.e. `{WEB_ROOT}/index.html`).
+fn web_panel_dir(hostname: &str) -> String {
+    let host = hostname
+        .rsplit_once(':')
+        .map(|(h, _)| h)
+        .unwrap_or(hostname);
+    for panel in ["ai", "rag", "agents", "dev", "guardian", "settings"] {
+        if host == panel || host.starts_with(&format!("{}.", panel)) {
+            return panel.to_string();
+        }
+    }
+    String::new()
+}
+
+/// OpenAI-compatible `/v1/*` reverse proxy to the local Ollama backend. Paths are
+/// forwarded to `{AI_ENDPOINT}/v1/...` and the upstream body is streamed back so
+/// `stream: true` responses work. `/v1/models` is handled by the core route
+/// (a specific route shadows this wildcard).
+async fn v1_proxy_handler(
+    State(state): State<Arc<AppState>>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response<Body> {
+    let path = uri
+        .path()
+        .strip_prefix("/v1")
+        .filter(|p| !p.is_empty())
+        .unwrap_or("/");
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let accept = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    state
+        .openai_proxy
+        .forward(
+            method,
+            path,
+            uri.query(),
+            content_type.as_deref(),
+            accept.as_deref(),
+            body,
+        )
+        .await
 }
 
 // ─── Status ──────────────────────────────────────────────────────
@@ -1661,6 +1738,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let orch_url = std::env::var("ORCHESTRATOR_ENDPOINT").ok();
     let ai_model = std::env::var("AI_MODEL").unwrap_or_else(|_| cfg.fallback_model.clone());
     let embed_fallback_models = cfg.embed_fallback_model.clone();
+    let web_root = cfg.web_root.clone();
+    let openai_proxy = OpenAiProxy::new(format!("{}/v1", cfg.ai_endpoint));
 
     let registry_path = std::env::var("DISCOVERY_REGISTRY_PATH")
         .unwrap_or_else(|_| "config/port_registry.json".to_string());
@@ -1802,6 +1881,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let state = Arc::new(AppState {
         vault_path: vault_path.clone(),
+        web_root: web_root.clone(),
         security_watcher: Arc::new(watcher::SecurityWatcher::new()),
         ai_url,
         opa_url,
@@ -1862,6 +1942,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         mcp_server,
         agents: Mutex::new(agent_vec),
         orchestrator_proxy,
+        openai_proxy,
         key_manager,
         vector_store: vector_store.map(Arc::new),
         fusion_router: Some(fusion_router),
@@ -1871,9 +1952,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         start_time: std::time::Instant::now(),
     });
 
-    let app = Router::new()
-        .route("/", get(dashboard_handler))
-        .nest_service("/web", ServeDir::new("../web"))
+    // All JSON/API routes, registered on both `/api/*` (dev-panel prefix) and the
+    // bare path. `api_router` is nested under `/api` (which strips the prefix) and
+    // merged at the root; both keep the same `Arc<AppState>` state, supplied by the
+    // outer router's `.with_state(state)`.
+    let api_router = Router::new()
         .route("/status", get(status_handler))
         .route("/discovery", get(discovery_handler))
         .route("/metrics", get(metrics_handler))
@@ -1939,7 +2022,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/guardian/query", post(guardian_query_handler))
         .route("/guardian/versions", get(guardian_versions_handler))
         .route("/guardian/snapshot", post(guardian_snapshot_handler))
-        .route("/guardian", get(guardian_page_handler))
+        .route("/guardian", get(guardian_page_handler));
+
+    let app = Router::new()
+        .route("/", get(web_index_handler))
+        .nest_service("/web", ServeDir::new(web_root))
+        .nest("/api", api_router.clone())
+        .merge(api_router)
+        .route("/v1/*path", get(v1_proxy_handler).post(v1_proxy_handler))
         .with_state(state);
 
     let port = cfg.port.to_string();

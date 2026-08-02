@@ -8,6 +8,7 @@ pub struct Config {
     pub port: u16,
     pub fallback_model: String,
     pub embed_fallback_model: String,
+    pub web_root: PathBuf,
 }
 
 impl Config {
@@ -26,6 +27,7 @@ impl Config {
                 .unwrap_or_else(|_| "qwen2.5:7b".to_string()),
             embed_fallback_model: std::env::var("AETHERIS_EMBED_FALLBACK_MODEL")
                 .unwrap_or_else(|_| "nomic-embed-text".to_string()),
+            web_root: Self::path_from_env("WEB_ROOT", "/opt/aetheris/web"),
         }
     }
 

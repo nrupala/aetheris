@@ -57,10 +57,25 @@ Environment (see `config/core.env.example`) - no secrets:
 | `AETHERIS_FALLBACK_MODEL` | `qwen2.5:7b` | Generation fallback |
 | `AETHERIS_EMBED_FALLBACK_MODEL` | `nomic-embed-text` | Embedding fallback |
 | `PORT` | `8080` | Loopback HTTP port |
+| `WEB_ROOT` | `/opt/aetheris/web` | Web panels root (per-subdomain `index.html`) |
 | `OPA_ENDPOINT` | `http://127.0.0.1:8181` | OPA policy engine (loopback, optional) |
 | `VAULT_PATH` | `/data/vault` | Vault / WAL directory |
 
-## 4. cloudflared ingress
+## 4. Web panels & OpenAI-compat API
+
+The core serves the web panels itself by **Host header** (no nginx): the `ai.*`,
+`rag.*`, `agents.*`, `dev.*` (and `guardian.*`, `settings.*`) subdomains map to
+`{WEB_ROOT}/<subdomain>/index.html`; any other host (apex, `core.*`, localhost)
+gets `{WEB_ROOT}/index.html`. The panels are single-file HTML that call the core
+directly, so they work from any subdomain.
+
+The core also exposes an **OpenAI-compatible API at `/v1/*`** that reverse-proxies
+to Ollama at `{AI_ENDPOINT}/v1/...` (e.g. `/v1/chat/completions`), streaming the
+upstream body so `stream: true` works. `/v1/models` returns Ollama's real model
+list. All JSON API routes are additionally reachable under `/api/...` (used by the
+dev panel), e.g. `/api/health`.
+
+## 5. cloudflared ingress
 Point the tunnel straight at the loopback core (no nginx in between). Example
 `/etc/cloudflared/config.yml`:
 ```yaml
@@ -78,7 +93,7 @@ systemctl restart cloudflared
 ```
 Ollama (`127.0.0.1:11434`) is **never** added to the ingress - it stays loopback-only.
 
-## 5. Cloudflare Access (auth)
+## 6. Cloudflare Access (auth)
 Auth is enforced by Cloudflare Access at the edge - there is no HTTP Basic Auth and no
 `.htpasswd`.
 1. In the Cloudflare Zero Trust dashboard, create **Access -> Applications -> Add**
@@ -94,7 +109,7 @@ Auth is enforced by Cloudflare Access at the edge - there is no HTTP Basic Auth 
         https://core.nrupalakolkar.com/api/health
    ```
 
-## 6. Verification
+## 7. Verification
 ```bash
 # Service is up
 systemctl is-active aetheris-core
@@ -103,6 +118,19 @@ journalctl -u aetheris-core -n 50 --no-pager
 
 # Health on the loopback (on the box)
 curl -sf http://127.0.0.1:8080/health
+
+# Per-subdomain web panel (Host-header routed; default host gets web_root/index.html)
+curl -sf -H 'Host: ai.nrupalakolkar.com' http://127.0.0.1:8080/ | head
+curl -sf -H 'Host: rag.nrupalakolkar.com' http://127.0.0.1:8080/ | grep -o '<title>[^<]*</title>'
+
+# OpenAI-compat API through the core (proxied to loopback Ollama)
+curl -sf http://127.0.0.1:8080/v1/models
+curl -sf http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5:7b","messages":[{"role":"user","content":"ping"}],"max_tokens":16}'
+
+# JSON API is also reachable under the /api/ prefix (dev panel)
+curl -sf http://127.0.0.1:8080/api/health
 
 # One generation through loopback Ollama
 curl -sf http://127.0.0.1:11434/v1/chat/completions \
@@ -120,7 +148,7 @@ curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
      https://core.nrupalakolkar.com/health
 ```
 
-## 7. Teardown of the old Docker stack
+## 8. Teardown of the old Docker stack
 Once the native service is verified, remove the retired Docker deployment. From a
 checkout that still had `compose.yaml` (pre-cutover), or by container name:
 ```bash
@@ -133,7 +161,7 @@ docker image rm ghcr.io/nrupala/aetheris:latest ghcr.io/nrupala/aetheris-nginx:l
 nginx is gone entirely - cloudflared talks to the core directly, and Cloudflare Access
 replaces HTTP Basic Auth.
 
-## 8. Rollback
+## 9. Rollback
 The native service is self-contained:
 ```bash
 # Stop and disable the native service

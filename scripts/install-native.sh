@@ -66,7 +66,10 @@ install -d -m 0755 "${INSTALL_DIR}"
 install -m 0755 "${BIN_SRC}" "${INSTALL_DIR}/aetheris-core"
 
 # --- 4. Data dir (vault + WAL; matches the unit's ReadWritePaths=/data) ---
-install -d -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" -m 0750 "${DATA_DIR}"
+# /data is 0755 (world-traversable): Ollama's model store may live under
+# /data/ollama-models and the ollama user must be able to traverse /data.
+# Only the vault (0750, aetheris-only) is private.
+install -d -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" -m 0755 "${DATA_DIR}"
 install -d -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" -m 0750 "${DATA_DIR}/vault"
 
 # --- 5. Environment file (from the example if absent; never overwrite a live one) ---
