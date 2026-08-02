@@ -1,0 +1,11 @@
+[Unit]
+Description=Conditional kernel reboot after a package update needs one
+Documentation=https://www.freedesktop.org/software/systemd/man/latest/systemd-timer.html
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Reboot only if the running kernel has been replaced by an installed one.
+# If /var/run/reboot-required is absent (or stale), exit 0 and wait for the next tick.
+ExecStart=/usr/bin/bash -c 'if [ -f /var/run/reboot-required ]; then echo "reboot-required present; rebooting"; systemctl reboot; else echo "no reboot required; skipping"; fi'

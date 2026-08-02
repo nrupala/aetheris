@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly conditional kernel reboot check (Sun 09:00 UTC)
+Documentation=https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html
+
+[Timer]
+# Run at 09:00 UTC every Sunday. `OnCalendar=Sun *-*-* 09:00:00 UTC`
+OnCalendar=Sun *-*-* 09:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5m
+Unit=aetheris-reboot-required.service
+
+[Install]
+WantedBy=timers.target
