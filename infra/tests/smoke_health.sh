@@ -46,8 +46,10 @@ check "ollama tags" "models" curl -s -m 10 "$BASE_LLM/api/tags"
 check "core health" "ai_connected" curl -s -m 10 "$BASE_CORE/health"
 
 echo "== core AI bridge =="
-check "core embed resolves" "768" bash -c "curl -s -m 30 $BASE_CORE/bridge/ai/embed -H 'Content-Type: application/json' -d '{\"text\":\"health check\"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d[\"embedding\"]))'"
-check "core fusion generation" "OK" bash -c "curl -s -m 180 $BASE_CORE/fusion/query -H 'Content-Type: application/json' -d '{\"query\":\"Reply with exactly: OK\"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"answer\"])'"
+EMBED_JSON=$(python3 -c 'import json; print(json.dumps({"text":"health check"}))')
+FUSION_JSON=$(python3 -c 'import json; print(json.dumps({"query":"Reply with exactly: OK"}))')
+check "core embed resolves" "768" bash -c "curl -s -m 30 $BASE_CORE/bridge/ai/embed -H 'Content-Type: application/json' -d '$EMBED_JSON' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d[\"embedding\"]))'"
+check "core fusion generation" "OK" bash -c "curl -s -m 180 $BASE_CORE/fusion/query -H 'Content-Type: application/json' -d '$FUSION_JSON' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"answer\"])'"
 
 echo ""
 echo "RESULT: $pass passed, $fail failed"
