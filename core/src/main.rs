@@ -356,7 +356,7 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         "memory_used_mb": used_mb,
         "spread_forecast": {
             "total_memory_mb": total_mb,
-            "memory_utilization_pct": if total_mb > 0 { (used_mb * 100) / total_mb } else { 0 },
+            "memory_utilization_pct": used_mb.saturating_mul(100).checked_div(total_mb).unwrap_or(0),
             "confidence": 0.85,
             "bottleneck": "none"
         }
@@ -1380,7 +1380,7 @@ async fn orchestrator_forecast_handler(State(state): State<Arc<AppState>>) -> im
     axum::Json(serde_json::json!({
         "forecast": {
             "total_memory_mb": total_mb,
-            "memory_utilization_pct": if total_mb > 0 { (used_mb * 100) / total_mb } else { utilization },
+            "memory_utilization_pct": used_mb.saturating_mul(100).checked_div(total_mb).unwrap_or(utilization),
             "confidence": 0.85,
             "bottleneck": if utilization > 80 { "agents" } else { "none" },
         },
