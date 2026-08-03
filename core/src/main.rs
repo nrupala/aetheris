@@ -1875,21 +1875,21 @@ fn access_role(email: &str, service_token_client_id: Option<&str>) -> &'static s
     .as_str()
 }
 
-/// Restrict OPA enforcement to mutating/sensitive routes (D2 scope).
-/// GET/static/panels stay under Cloudflare Access.
+/// True for state-changing verbs. Catches /ingest, /bridge/*, /keys writes,
+/// /task, /workflow, /sync/upload etc. (the old blanket prefix list).
+fn is_mutating(method: &str) -> bool {
+    matches!(method, "POST" | "PUT" | "PATCH" | "DELETE")
+}
+
+/// Restrict OPA enforcement to sensitive requests (D2 scope): any mutating verb,
+/// or a GET that reads secrets/logs/files. GET/static/panels stay under CF Access.
+/// Method-aware - a bare GET to a write-capable path prefix is NOT sensitive.
 fn is_sensitive(method: &str, path: &str) -> bool {
-    matches!(method, "POST" | "PUT" | "DELETE")
-        || [
-            "/upload",
-            "/ingest",
-            "/keys",
-            "/bridge",
-            "/task",
-            "/workflow",
-            "/sync/upload",
-        ]
-        .iter()
-        .any(|p| path.starts_with(p))
+    is_mutating(method)
+        || (method == "GET"
+            && ["/keys", "/audit", "/sync/download", "/dev/logs"]
+                .iter()
+                .any(|p| path.starts_with(p)))
 }
 
 /// OPA shadow middleware (Phase 3). Evaluates every request against OPA and
@@ -2258,7 +2258,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_state(state);
 
     let port = cfg.port.to_string();
-    let addr = format!("0.0.0.0:{}", port);
+    // Loopback-only: external access is exclusively via the cloudflared tunnel
+    // (which connects from lo). Avoids depending on iptables + dashboard ingress
+    // for header-trust. Consequence: all traffic is loopback-sourced, so internal
+    // caller trust must be a service-token header, not a source-IP bypass.
+    let addr = format!("127.0.0.1:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("Aetheris Core listening on {}", addr);
 
@@ -2483,19 +2487,31 @@ mod tests {
 
     #[test]
     fn is_sensitive_classification() {
+        // mutating verbs -> sensitive regardless of path
         assert!(is_sensitive("POST", "/query"));
         assert!(is_sensitive("PUT", "/config"));
         assert!(is_sensitive("DELETE", "/sources/x"));
-        assert!(is_sensitive("GET", "/upload"));
-        assert!(is_sensitive("GET", "/bridge/ai/query"));
-        assert!(is_sensitive("GET", "/ingest/file"));
+        assert!(is_sensitive("POST", "/ingest/file"));
+        assert!(is_sensitive("POST", "/bridge/ai/query"));
+        assert!(is_sensitive("POST", "/task/submit"));
+        assert!(is_sensitive("POST", "/workflow/run"));
+        assert!(is_sensitive("POST", "/sync/upload"));
+        // GET reads of secrets/logs/files -> sensitive
         assert!(is_sensitive("GET", "/keys"));
-        assert!(is_sensitive("GET", "/task/submit"));
-        assert!(is_sensitive("GET", "/workflow/run"));
-        assert!(is_sensitive("GET", "/sync/upload"));
+        assert!(is_sensitive("GET", "/audit/log"));
+        assert!(is_sensitive("GET", "/sync/download/f.bin"));
+        assert!(is_sensitive("GET", "/dev/logs"));
+        // GET to write-only prefixes is NOT sensitive (re-scope clears safe bucket)
+        assert!(!is_sensitive("GET", "/bridge/ai/models"));
+        assert!(!is_sensitive("GET", "/ingest/file"));
+        assert!(!is_sensitive("GET", "/upload"));
+        assert!(!is_sensitive("GET", "/workflow/run"));
+        // non-sensitive GETs
         assert!(!is_sensitive("GET", "/panel"));
         assert!(!is_sensitive("GET", "/status"));
         assert!(!is_sensitive("GET", "/health"));
+        assert!(!is_sensitive("GET", "/metrics"));
+        assert!(!is_sensitive("GET", "/"));
     }
 
     #[test]
