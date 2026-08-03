@@ -705,10 +705,8 @@ async fn delete_source_handler(
                 filename: name.clone(),
             })
             .ok();
-        axum::Json(
-            serde_json::json!({"status": "deleted", "name": name, "chunks_purged": purged}),
-        )
-        .into_response()
+        axum::Json(serde_json::json!({"status": "deleted", "name": name, "chunks_purged": purged}))
+            .into_response()
     } else {
         push_dev_log(&state, "WARN", &format!("File delete NOT FOUND: {}", name));
         (
