@@ -1,5 +1,46 @@
-use crate::bridge::{AetherisBridge, ModelBridge, SecurityBridge};
+use crate::bridge::{AetherisBridge, AuthzInput, ModelBridge, SecurityBridge};
 use async_trait::async_trait;
+
+/// Role derived from the Cloudflare Access identity (see `identity_to_role`).
+#[allow(dead_code)] // not wired to a route until Phase 3; unit-tested
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpaRole {
+    Admin,
+    Analyst,
+    Unknown,
+}
+
+impl OpaRole {
+    #[allow(dead_code)]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OpaRole::Admin => "admin",
+            OpaRole::Analyst => "analyst",
+            OpaRole::Unknown => "unknown",
+        }
+    }
+}
+
+/// Pure, unit-tested mapping from Cloudflare Access identity headers to an
+/// OPA role. Not wired to any route yet (Phase 3 wiring).
+///
+/// * `authenticated_user_email`: value of the `Cf-Access-Authenticated-User-Email`
+///   header (present for human users behind Cloudflare Access).
+/// * `service_token_client_id`: value of the `Cf-Access-Client-Id` header
+///   (present for service-token automation).
+#[allow(dead_code)] // not wired to a route until Phase 3; unit-tested
+pub fn identity_to_role(
+    authenticated_user_email: Option<&str>,
+    service_token_client_id: Option<&str>,
+) -> OpaRole {
+    if authenticated_user_email == Some("nrupalakolkar@gmail.com") {
+        OpaRole::Admin
+    } else if service_token_client_id.is_some() {
+        OpaRole::Analyst
+    } else {
+        OpaRole::Unknown
+    }
+}
 
 pub struct OllamaBridge {
     pub url: String,
@@ -241,11 +282,12 @@ impl ModelBridge for OllamaBridge {
 
 pub struct OpaBridge {
     pub url: String,
+    pub fail_open: bool,
 }
 
 impl OpaBridge {
-    pub fn new(url: String) -> Self {
-        Self { url }
+    pub fn new(url: String, fail_open: bool) -> Self {
+        Self { url, fail_open }
     }
 }
 
@@ -267,9 +309,15 @@ impl AetherisBridge for OpaBridge {
 
 #[async_trait]
 impl SecurityBridge for OpaBridge {
-    async fn authorize(&self, peer_id: &str, action: &str) -> bool {
+    async fn authorize(&self, input: &AuthzInput) -> bool {
         let payload = serde_json::json!({
-            "input": { "peer_id": peer_id, "action": action }
+            "input": {
+                "identity": input.identity,
+                "role": input.role,
+                "method": input.method,
+                "path": input.path,
+                "action": input.action,
+            }
         });
         let client = crate::util::http_client();
         let res = client
@@ -280,11 +328,173 @@ impl SecurityBridge for OpaBridge {
         match res {
             Ok(r) => {
                 if let Ok(body) = r.json::<serde_json::Value>().await {
-                    return body.get("result").is_some();
+                    return body["result"].as_bool().unwrap_or(false);
                 }
                 false
             }
-            Err(_) => false,
+            Err(e) => {
+                if self.fail_open {
+                    log::warn!("OPA authz unreachable ({}); failing open", e);
+                    crate::metrics::SECURITY_VIOLATIONS.inc();
+                    return true;
+                }
+                false
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bridge::AuthzInput;
+    use axum::extract::State;
+    use axum::routing::post;
+    use axum::{Json, Router};
+
+    fn admin_input() -> AuthzInput {
+        AuthzInput {
+            identity: "user@example.com".to_string(),
+            role: "admin".to_string(),
+            method: "POST".to_string(),
+            path: "/v1/read".to_string(),
+            action: "read".to_string(),
+        }
+    }
+
+    fn input(role: &str, method: &str) -> AuthzInput {
+        AuthzInput {
+            identity: "user@example.com".to_string(),
+            role: role.to_string(),
+            method: method.to_string(),
+            path: "/v1/read".to_string(),
+            action: "read".to_string(),
+        }
+    }
+
+    /// Start a minimal OPA endpoint that mirrors `config/policy/aetheris.authz.rego`:
+    /// admin always allowed; analyst allowed only on GET.
+    async fn start_opa() -> String {
+        async fn decision(
+            State(_): State<()>,
+            Json(body): Json<serde_json::Value>,
+        ) -> Json<serde_json::Value> {
+            let role = body["input"]["role"].as_str().unwrap_or("");
+            let method = body["input"]["method"].as_str().unwrap_or("");
+            let allowed = role == "admin" || (role == "analyst" && method == "GET");
+            Json(serde_json::json!({ "result": allowed }))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route("/v1/data/aetheris/authz/allow", post(decision));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{}", addr)
+    }
+
+    /// Variant that always rejects with an explicit `{"result": false}`.
+    async fn start_opa_always_deny() -> String {
+        async fn deny() -> Json<serde_json::Value> {
+            Json(serde_json::json!({ "result": false }))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route("/v1/data/aetheris/authz/allow", post(deny));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{}", addr)
+    }
+
+    #[tokio::test]
+    async fn allow_admin() {
+        let url = start_opa().await;
+        let bridge = OpaBridge::new(url, true);
+        assert!(bridge.authorize(&admin_input()).await);
+    }
+
+    #[tokio::test]
+    async fn deny_unknown() {
+        let url = start_opa().await;
+        let bridge = OpaBridge::new(url, true);
+        assert!(!bridge.authorize(&input("unknown", "GET")).await);
+    }
+
+    #[tokio::test]
+    async fn analyst_get_allowed() {
+        let url = start_opa().await;
+        let bridge = OpaBridge::new(url, true);
+        assert!(bridge.authorize(&input("analyst", "GET")).await);
+    }
+
+    #[tokio::test]
+    async fn analyst_post_denied() {
+        let url = start_opa().await;
+        let bridge = OpaBridge::new(url, true);
+        assert!(!bridge.authorize(&input("analyst", "POST")).await);
+    }
+
+    #[tokio::test]
+    async fn explicit_result_false_denies() {
+        let url = start_opa_always_deny().await;
+        let bridge = OpaBridge::new(url, true);
+        assert!(!bridge.authorize(&admin_input()).await);
+    }
+
+    #[tokio::test]
+    async fn unreachable_fails_open() {
+        let bridge = OpaBridge::new("http://127.0.0.1:1".to_string(), true);
+        assert!(bridge.authorize(&admin_input()).await);
+    }
+
+    #[tokio::test]
+    async fn unreachable_fails_closed() {
+        let bridge = OpaBridge::new("http://127.0.0.1:1".to_string(), false);
+        assert!(!bridge.authorize(&admin_input()).await);
+    }
+
+    #[test]
+    fn identity_to_role_admin_email() {
+        assert_eq!(
+            identity_to_role(Some("nrupalakolkar@gmail.com"), None),
+            OpaRole::Admin
+        );
+    }
+
+    #[test]
+    fn identity_to_role_service_token_is_analyst() {
+        assert_eq!(
+            identity_to_role(None, Some("abc.def.service-token")),
+            OpaRole::Analyst
+        );
+    }
+
+    #[test]
+    fn identity_to_role_nothing_is_unknown() {
+        assert_eq!(identity_to_role(None, None), OpaRole::Unknown);
+    }
+
+    #[test]
+    fn identity_to_role_admin_email_beats_token() {
+        assert_eq!(
+            identity_to_role(Some("nrupalakolkar@gmail.com"), Some("abc.def")),
+            OpaRole::Admin
+        );
+    }
+
+    #[test]
+    fn identity_to_role_wrong_email_unknown() {
+        assert_eq!(
+            identity_to_role(Some("attacker@example.com"), None),
+            OpaRole::Unknown
+        );
+    }
+
+    #[test]
+    fn opa_role_as_str() {
+        assert_eq!(OpaRole::Admin.as_str(), "admin");
+        assert_eq!(OpaRole::Analyst.as_str(), "analyst");
+        assert_eq!(OpaRole::Unknown.as_str(), "unknown");
     }
 }

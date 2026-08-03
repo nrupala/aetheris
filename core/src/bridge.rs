@@ -6,9 +6,21 @@ pub trait AetherisBridge: Send + Sync {
     async fn health_check(&self) -> bool;
 }
 
+/// The authorization input contract sent to OPA's
+/// `POST /v1/data/aetheris/authz/allow`. Mirrors the `input` document in
+/// `config/policy/aetheris.authz.rego`.
+#[derive(Debug, Clone)]
+pub struct AuthzInput {
+    pub identity: String,
+    pub role: String,
+    pub method: String,
+    pub path: String,
+    pub action: String,
+}
+
 #[async_trait]
 pub trait SecurityBridge: AetherisBridge {
-    async fn authorize(&self, peer_id: &str, action: &str) -> bool;
+    async fn authorize(&self, input: &AuthzInput) -> bool;
 }
 
 #[async_trait]

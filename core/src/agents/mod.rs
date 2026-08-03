@@ -152,7 +152,14 @@ impl BaseAgent {
     pub async fn check_policy(&mut self, action: &str, _task: &str) -> bool {
         self.policies_checked += 1;
         let allowed = if let Some(ref bridge) = self.security_bridge {
-            bridge.authorize(self.role.as_str(), action).await
+            let authz_input = crate::bridge::AuthzInput {
+                identity: String::new(),
+                role: self.role.as_str().to_string(),
+                method: String::new(),
+                path: String::new(),
+                action: action.to_string(),
+            };
+            bridge.authorize(&authz_input).await
         } else {
             let local_allowed: bool = match self.role {
                 AgentRole::Researcher => matches!(

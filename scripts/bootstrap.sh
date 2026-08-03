@@ -15,14 +15,6 @@ if [ ! -f .aetheris_key ]; then
     echo "Master encryption key generated."
 fi
 
-echo "Creating OPA policy..."
-cat <<EOF > config/policy/policy.rego
-package aetheris.authz
-default allow = false
-allow { input.user_role == "admin" }
-allow { input.user_role == "analyst"; input.method == "GET" }
-EOF
-
 echo "Building containers..."
 docker compose build --no-cache
 
