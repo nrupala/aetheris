@@ -50,7 +50,6 @@ rustup target add x86_64-unknown-linux-musl
 | ollama/ollama | Docker Hub | latest |
 | chromadb/chroma | Docker Hub | latest |
 | victoriametrics/victoria-metrics | Docker Hub | latest |
-| openpolicyagent/opa | Docker Hub | latest |
 | gcr.io/distroless/static-debian12 | Google Container Registry | latest |
 | alpine | Docker Hub | latest |
 
@@ -97,7 +96,7 @@ async-trait = "0.1"
 | WireGuard | Host IP | 51820 | UDP |
 | Aetheris Core | 10.0.0.1 | 8080 | TCP |
 | Ghost Shell | 10.0.0.1 | 8081 | TCP |
-| OPA | 10.0.0.1 | 8181 | TCP |
+| OPA (native opa.service) | 127.0.0.1 | 8181 | TCP |
 | Ollama | 10.0.0.1 | 11434 | TCP |
 | ChromaDB | 10.0.0.1 | 8000 | TCP |
 | VictoriaMetrics | 10.0.0.1 | 8428 | TCP |

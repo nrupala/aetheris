@@ -82,6 +82,40 @@ else
   log "${ETC_DIR}/core.env already exists - leaving it untouched"
 fi
 
+# --- 5b. OPA policy engine (native, loopback-only) ---
+# Installs the static OPA v1 binary, deploys the versioned policy, and enables
+# opa.service. Loopback only (127.0.0.1:8181) - never expose 8181 via tunnel.
+OPA_VERSION="${OPA_VERSION:-1.1.0}"
+OPA_BIN="/usr/local/bin/opa"
+OPA_POLICY_DIR="${ETC_DIR}/policy"
+OPA_UNIT_DST="/etc/systemd/system/opa.service"
+
+if [[ "${ARCH}" == "aarch64" ]]; then
+  OPA_RELEASE_ARCH="arm64"
+else
+  OPA_RELEASE_ARCH="amd64"
+fi
+
+log "Installing OPA v${OPA_VERSION} (native, loopback-only, ${OPA_RELEASE_ARCH})"
+if [[ ! -x "${OPA_BIN}" ]] || ! "${OPA_BIN}" version 2>/dev/null | grep -q "${OPA_VERSION}"; then
+  log "Downloading OPA v${OPA_VERSION} static from GitHub releases"
+  curl -fsSL -o /tmp/opa.aetheris \
+    "https://github.com/open-policy-agent/opa/releases/download/v${OPA_VERSION}/opa_linux_${OPA_RELEASE_ARCH}_static"
+  install -m 0755 /tmp/opa.aetheris "${OPA_BIN}"
+  rm -f /tmp/opa.aetheris
+fi
+"${OPA_BIN}" version
+
+log "Deploying OPA policy to ${OPA_POLICY_DIR}"
+install -d -m 0755 "${OPA_POLICY_DIR}"
+install -m 0644 "${REPO_ROOT}/config/policy/aetheris.authz.rego" "${OPA_POLICY_DIR}/"
+
+log "Installing opa.service unit to ${OPA_UNIT_DST}"
+install -m 0644 "${REPO_ROOT}/infra/systemd/opa.service" "${OPA_UNIT_DST}"
+log "Reloading systemd and enabling opa"
+systemctl daemon-reload
+systemctl enable --now opa.service
+
 # --- 6. systemd unit ---
 log "Installing systemd unit to ${UNIT_DST}"
 install -m 0644 "${REPO_ROOT}/infra/systemd/aetheris-core.service" "${UNIT_DST}"
