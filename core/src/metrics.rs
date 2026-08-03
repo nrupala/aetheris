@@ -59,25 +59,27 @@ mod tests {
 
     #[test]
     fn test_gauge_set_and_get() {
+        // Combined into one sequential test: these two mutate the same global
+        // gauge and, if separate, race under the parallel test harness
+        // (e.g. agent/middleware tests bump security metrics concurrently).
         VAULT_USAGE_BYTES.set(2048.0);
         assert_eq!(VAULT_USAGE_BYTES.get(), 2048.0);
-    }
-
-    #[test]
-    fn test_gauge_increment() {
-        VAULT_USAGE_BYTES.set(5000.0);
         let before = VAULT_USAGE_BYTES.get();
         VAULT_USAGE_BYTES.inc();
-        let after = VAULT_USAGE_BYTES.get();
-        assert_eq!(after, before + 1.0);
+        assert_eq!(VAULT_USAGE_BYTES.get(), before + 1.0);
     }
 
     #[test]
     fn test_counter_increment() {
+        // Advisory agent authz concurrently increments SECURITY_VIOLATIONS in other
+        // tests, so assert a non-decreasing delta rather than an exact +1.
         let before = SECURITY_VIOLATIONS.get();
         SECURITY_VIOLATIONS.inc();
         let after = SECURITY_VIOLATIONS.get();
-        assert_eq!(after, before + 1.0);
+        assert!(
+            after >= before + 1.0,
+            "counter did not increment: {before} -> {after}"
+        );
     }
 
     #[test]

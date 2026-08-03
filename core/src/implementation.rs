@@ -283,11 +283,52 @@ impl ModelBridge for OllamaBridge {
 pub struct OpaBridge {
     pub url: String,
     pub fail_open: bool,
+    pub enforce: bool,
 }
 
 impl OpaBridge {
-    pub fn new(url: String, fail_open: bool) -> Self {
-        Self { url, fail_open }
+    pub fn new(url: String, fail_open: bool, enforce: bool) -> Self {
+        Self {
+            url,
+            fail_open,
+            enforce,
+        }
+    }
+
+    /// POST `{"input":{identity,role,method,path,action}}` to the given OPA
+    /// decision path and parse the boolean `result` (deny on absent/non-bool).
+    async fn eval(&self, decision_path: &str, input: &AuthzInput) -> bool {
+        let payload = serde_json::json!({
+            "input": {
+                "identity": input.identity,
+                "role": input.role,
+                "method": input.method,
+                "path": input.path,
+                "action": input.action,
+            }
+        });
+        let client = crate::util::http_client();
+        let res = client
+            .post(format!("{}/{}", self.url, decision_path))
+            .json(&payload)
+            .send()
+            .await;
+        match res {
+            Ok(r) => {
+                if let Ok(body) = r.json::<serde_json::Value>().await {
+                    return body["result"].as_bool().unwrap_or(false);
+                }
+                false
+            }
+            Err(e) => {
+                if self.fail_open {
+                    log::warn!("OPA authz unreachable ({}); failing open", e);
+                    crate::metrics::SECURITY_VIOLATIONS.inc();
+                    return true;
+                }
+                false
+            }
+        }
     }
 }
 
@@ -310,37 +351,15 @@ impl AetherisBridge for OpaBridge {
 #[async_trait]
 impl SecurityBridge for OpaBridge {
     async fn authorize(&self, input: &AuthzInput) -> bool {
-        let payload = serde_json::json!({
-            "input": {
-                "identity": input.identity,
-                "role": input.role,
-                "method": input.method,
-                "path": input.path,
-                "action": input.action,
-            }
-        });
-        let client = crate::util::http_client();
-        let res = client
-            .post(format!("{}/v1/data/aetheris/authz/allow", self.url))
-            .json(&payload)
-            .send()
-            .await;
-        match res {
-            Ok(r) => {
-                if let Ok(body) = r.json::<serde_json::Value>().await {
-                    return body["result"].as_bool().unwrap_or(false);
-                }
-                false
-            }
-            Err(e) => {
-                if self.fail_open {
-                    log::warn!("OPA authz unreachable ({}); failing open", e);
-                    crate::metrics::SECURITY_VIOLATIONS.inc();
-                    return true;
-                }
-                false
-            }
-        }
+        self.eval("v1/data/aetheris/authz/allow", input).await
+    }
+
+    async fn authorize_agent(&self, input: &AuthzInput) -> bool {
+        self.eval("v1/data/aetheris/agents/allow", input).await
+    }
+
+    fn enforcing(&self) -> bool {
+        self.enforce
     }
 }
 
@@ -410,47 +429,47 @@ mod tests {
     #[tokio::test]
     async fn allow_admin() {
         let url = start_opa().await;
-        let bridge = OpaBridge::new(url, true);
+        let bridge = OpaBridge::new(url, true, false);
         assert!(bridge.authorize(&admin_input()).await);
     }
 
     #[tokio::test]
     async fn deny_unknown() {
         let url = start_opa().await;
-        let bridge = OpaBridge::new(url, true);
+        let bridge = OpaBridge::new(url, true, false);
         assert!(!bridge.authorize(&input("unknown", "GET")).await);
     }
 
     #[tokio::test]
     async fn analyst_get_allowed() {
         let url = start_opa().await;
-        let bridge = OpaBridge::new(url, true);
+        let bridge = OpaBridge::new(url, true, false);
         assert!(bridge.authorize(&input("analyst", "GET")).await);
     }
 
     #[tokio::test]
     async fn analyst_post_denied() {
         let url = start_opa().await;
-        let bridge = OpaBridge::new(url, true);
+        let bridge = OpaBridge::new(url, true, false);
         assert!(!bridge.authorize(&input("analyst", "POST")).await);
     }
 
     #[tokio::test]
     async fn explicit_result_false_denies() {
         let url = start_opa_always_deny().await;
-        let bridge = OpaBridge::new(url, true);
+        let bridge = OpaBridge::new(url, true, false);
         assert!(!bridge.authorize(&admin_input()).await);
     }
 
     #[tokio::test]
     async fn unreachable_fails_open() {
-        let bridge = OpaBridge::new("http://127.0.0.1:1".to_string(), true);
+        let bridge = OpaBridge::new("http://127.0.0.1:1".to_string(), true, false);
         assert!(bridge.authorize(&admin_input()).await);
     }
 
     #[tokio::test]
     async fn unreachable_fails_closed() {
-        let bridge = OpaBridge::new("http://127.0.0.1:1".to_string(), false);
+        let bridge = OpaBridge::new("http://127.0.0.1:1".to_string(), false, false);
         assert!(!bridge.authorize(&admin_input()).await);
     }
 
@@ -496,5 +515,104 @@ mod tests {
         assert_eq!(OpaRole::Admin.as_str(), "admin");
         assert_eq!(OpaRole::Analyst.as_str(), "analyst");
         assert_eq!(OpaRole::Unknown.as_str(), "unknown");
+    }
+
+    /// Mirror of config/policy/aetheris.agents.rego. Serves ONLY the agents/allow
+    /// path, so a wrong decision path (authz) yields 404 -> result false.
+    async fn start_agent_opa() -> String {
+        async fn agent_decision(
+            State(_): State<()>,
+            Json(body): Json<serde_json::Value>,
+        ) -> Json<serde_json::Value> {
+            let role = body["input"]["role"].as_str().unwrap_or("");
+            let action = body["input"]["action"].as_str().unwrap_or("");
+            let allowed = match role {
+                "researcher" => matches!(
+                    action,
+                    "query" | "read" | "extract_entities" | "list_sources"
+                ),
+                "coder" => matches!(
+                    action,
+                    "write" | "read" | "execute_readonly" | "list_directory"
+                ),
+                "reviewer" => matches!(action, "read" | "evaluate" | "query_kg" | "list_sources"),
+                "planner" => matches!(
+                    action,
+                    "read" | "query" | "query_kg" | "list_agents" | "coordinate"
+                ),
+                "analyst" => matches!(action, "query" | "read" | "query_kg" | "list_sources"),
+                _ => false,
+            };
+            Json(serde_json::json!({ "result": allowed }))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route("/v1/data/aetheris/agents/allow", post(agent_decision));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{}", addr)
+    }
+
+    fn agent_input(role: &str, action: &str) -> AuthzInput {
+        AuthzInput {
+            identity: String::new(),
+            role: role.to_string(),
+            method: String::new(),
+            path: String::new(),
+            action: action.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn authorize_agent_allowed_role_actions_pass() {
+        let url = start_agent_opa().await;
+        let bridge = OpaBridge::new(url, false, false);
+        assert!(
+            bridge
+                .authorize_agent(&agent_input("researcher", "query"))
+                .await
+        );
+        assert!(bridge.authorize_agent(&agent_input("coder", "write")).await);
+        assert!(
+            bridge
+                .authorize_agent(&agent_input("reviewer", "evaluate"))
+                .await
+        );
+        assert!(
+            bridge
+                .authorize_agent(&agent_input("planner", "coordinate"))
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_agent_unknown_role_or_action_denies() {
+        let url = start_agent_opa().await;
+        let bridge = OpaBridge::new(url, false, false);
+        // known role, action not in its allowlist
+        assert!(
+            !bridge
+                .authorize_agent(&agent_input("researcher", "write"))
+                .await
+        );
+        assert!(!bridge.authorize_agent(&agent_input("coder", "query")).await);
+        // unknown role
+        assert!(!bridge.authorize_agent(&agent_input("admin", "read")).await);
+        // empty role/action
+        assert!(!bridge.authorize_agent(&agent_input("", "")).await);
+    }
+
+    #[tokio::test]
+    async fn authorize_agent_hits_agents_path_not_authz() {
+        // The server only serves agents/allow; if authorize_agent posted to
+        // authz/allow it would 404 -> false, so a true here proves the right path.
+        let url = start_agent_opa().await;
+        let bridge = OpaBridge::new(url, false, false);
+        assert!(
+            bridge
+                .authorize_agent(&agent_input("researcher", "query"))
+                .await
+        );
     }
 }

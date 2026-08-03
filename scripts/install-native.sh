@@ -109,6 +109,7 @@ fi
 log "Deploying OPA policy to ${OPA_POLICY_DIR}"
 install -d -m 0755 "${OPA_POLICY_DIR}"
 install -m 0644 "${REPO_ROOT}/config/policy/aetheris.authz.rego" "${OPA_POLICY_DIR}/"
+install -m 0644 "${REPO_ROOT}/config/policy/aetheris.agents.rego" "${OPA_POLICY_DIR}/"
 
 log "Installing opa.service unit to ${OPA_UNIT_DST}"
 install -m 0644 "${REPO_ROOT}/infra/systemd/opa.service" "${OPA_UNIT_DST}"
