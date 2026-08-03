@@ -141,27 +141,25 @@ flowchart LR
 ## What's Working vs What's Missing
 
 ### 🟢 Working Right Now
-- Rust core compiles with 0 errors, 0 warnings
-- 78/78 tests pass
-- All server routes register and respond
+- Rust core compiles with 0 errors, 0 warnings; 39/39 unit tests pass
+- All server routes register and respond (8080)
 - Agent pipeline (Planner→Researcher→Coder→Reviewer) compiles
 - A2A messaging, MCP tools, WAL audit log
-- Agents dashboard shows real data from live endpoints
-- Dashboard HTML loaded via `include_str!`
+- RAG pipeline live: upload → chunk → embed (nomic-embed-text) → SQLite vector store → generate (phi4-mini)
+- Knowledge graph (entities/relations) populated from ingested documents
+- Cloudflare Access + Tunnel routing all five hostnames (ai, rag, agents, dev, oracle) to core
 - Web UIs served statically under `/web/`
 
 ### 🟡 Partial / Broken
-- **Dev Sandbox**: Endpoints use `/api/*` prefix — 404 locally (Access-gated proxy in production). Need to detect local vs proxy mode
-- **RAG queries**: Return synthetic mock data, not real results
-- **AI Chat**: Falls back to hardcoded model list — Ollama not running
+- **Reranker**: Disabled by default — deployed Ollama 0.24.0 has no `/api/rerank` (falls back to vector-search order)
+- **Dev Sandbox**: Was previously using `/api/*` prefix in production; all panels now use the same endpoints as the RAG panel
+- **AI chat model**: qwen3:8b is slow on CPU (~150s); phi4-mini is the fast default
 
-### 🔴 Not Working
-- **RAG ingest**: No Python orchestrator running → uploads fail
-- **Ollama connection**: Model bridge gets connection refused
-- **Orchestrator proxy**: Python service not started
-- **ChromaDB**: Vector database not running
-- **VictoriaMetrics**: Metrics DB not running
-- **Cloudflare Access + Tunnel**: Can't test locally
+### 🔴 Not Working / Not Deployed
+- **Python orchestrator (:9090)**: Not required — RAG/KG are native Rust; orchestrator proxy is optional
+- **ChromaDB**: Replaced by the native SQLite vector store
+- **code-server (:8443)**: Not deployed — the dev subdomain is an API console, not a VS Code sandbox
+- **VictoriaMetrics**: Not running on the native deploy
 
 ## Quick Fix Priority
 

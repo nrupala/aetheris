@@ -2,10 +2,17 @@
 
 ## Overview
 
-The Aetheris RAG (Retrieval-Augmented Generation) pipeline transforms raw documents into indexed knowledge and uses that knowledge to answer questions with citations. This document details every step from upload to answer.
+The Aetheris RAG (Retrieval-Augmented Generation) pipeline transforms raw documents into an indexed knowledge base and answers questions against it with source citations. It is implemented **natively in Rust** inside Aetheris Core — there is no Python orchestrator or ChromaDB dependency.
 
-**Location**: `rag_core/pipeline.py`, `rag_cli.py`  
-**Components**: Chunker → Embedder → Vector Store → Retriever → Generator
+**Components** (all in `core/`):
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| `TextChunker` | `core/src/rag.rs` | Splits documents into chunks |
+| `VectorStore` | `core/src/rag.rs` | SQLite-backed vector index (normalized cosine search) |
+| `KnowledgeGraph` | `core/src/kg.rs` | Entity/relation extraction on ingest |
+| `OllamaBridge` | `core/src/implementation.rs` | Embeddings + LLM generation + optional reranking |
+| RAG handlers | `core/src/main.rs` | HTTP endpoints (`/query`, `/ingest/file`, `/config`, `/sources`, `/stats`) |
 
 ---
 
@@ -18,684 +25,193 @@ graph LR
         C --> E[Embed]
         E --> S[Store]
     end
-    
+
     subgraph Query["Query Pipeline"]
         Q[Question] --> R[Retrieve]
         R --> G[Generate]
         G --> A[Answer]
     end
-    
-    subgraph Storage["Persistent Storage"]
-        S --> VS[(Vector DB\nChromaDB)]
-        S --> KG[(Knowledge Graph\nSQLite)]
+
+    subgraph Storage["Persistent Storage (vault)"]
+        S --> VS[(vectors.db\nSQLite)]
+        S --> KG[(knowledge_graph.db\nSQLite)]
     end
-    
-    subgraph Governance["Processing Coordinator"]
-        CB[Circuit Breaker]
-        RM[Resource Monitor]
-        SM[State Machine]
-        AL[Audit Logger]
-    end
-    
+
     VS -.-> R
     KG -.-> G
-    
-    U -.-> Governance
-    Q -.-> Governance
+```
+
+```
+Browser → Cloudflare Access → Cloudflare Tunnel → Aetheris Core (:8080)
+  → Rust RAG pipeline
+    → Ollama (:11434) — embeddings (nomic-embed-text) + generation (phi4-mini)
 ```
 
 ---
 
-## Directory Architecture
+## Storage Layout
 
-Strict separation prevents all collision/overwrite scenarios:
+All RAG data lives under the vault directory (`VAULT_PATH`, default `/data/vault`):
 
-```mermaid
-graph TD
-    subgraph Workspace["/workspace/"]
-        subgraph Input["input/ — Raw uploads\nTTL: 1 hour"]
-            I1["{uuid}/filename.txt\nUUID-isolated staging"]
-        end
-        
-        subgraph Preprocess["preprocess/ — Cleaned, validated\nTTL: 24 hours"]
-            P1["{uuid}/chunks/\nJSON chunk files"]
-            P2["{uuid}/metadata.json"]
-        end
-        
-        subgraph Processing["processing/ — Active computation\nTTL: 1 hour"]
-            PR1["{uuid}/embeddings.npy\nRAM→disk spillover"]
-            PR2["{uuid}/state.json\nPregel checkpoint"]
-        end
-        
-        subgraph Intermediate["intermediate/ — Cross-engine\nTTL: 6 hours"]
-            IM1["{conv_id}/rag_to_ai.json"]
-            IM2["{conv_id}/ai_to_dev.json"]
-        end
-        
-        subgraph Output["output/ — Final results\nTTL: 7 days"]
-            O1["{uuid}/answer.json"]
-            O2["{uuid}/sources.json"]
-        end
-        
-        subgraph Persisted["persisted/ — Permanent"]
-            PE1["kg.db — Knowledge Graph"]
-            PE2["vectors.db — Vector DB"]
-            PE3["storage/{year}/{month}/\nPermanent copies"]
-            PE4["audit/{year}-{month}.jsonl"]
-        end
-    end
-    
-    Input -->|"TTL: 1h"| Preprocess
-    Preprocess -->|"TTL: 24h"| Processing
-    Processing -->|"TTL: 1h"| Intermediate
-    Intermediate -->|"TTL: 6h"| Output
-    Output -->|"TTL: 7d"| Persisted
-```
+| Path | Purpose |
+|------|---------|
+| `vectors.db` | Vector store — `chunks` + `embeddings` tables, WAL mode |
+| `knowledge_graph.db` | Entity/relation graph |
+| `rag_config.json` | Persisted RAG configuration (auto-loaded at startup) |
+| `<uploaded files>` | Original uploaded documents (used for deletion) |
+| `wal/` | Write-ahead audit log |
+| `chronicle/` | Guardian snapshots |
 
-**TTL Rules**:
-
-| Directory | TTL | Rationale | Auto-Cleanup |
-|-----------|-----|-----------|-------------|
-| `input/` | 1 hour | Raw uploads should be processed quickly | Yes |
-| `preprocess/` | 24 hours | May be needed for re-processing | Yes |
-| `processing/` | 1 hour | Active computation should complete fast | Yes |
-| `intermediate/` | 6 hours | Cross-engine data may need time | Yes |
-| `output/` | 7 days | Final results kept for review | Yes |
-| `.tmp/` | 30 minutes | Temporary files | Yes |
-| `persisted/` | Never | Long-term storage | No |
+The vector store schema uses `PRAGMA foreign_keys=ON` with embeddings referencing chunks via `ON DELETE CASCADE`, so deleting a source purges its vectors automatically.
 
 ---
 
-## Ingest Workflow — Step by Step
+## Ingest Workflow
 
 ### Step 1: Upload
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant API as RAG API
-    participant Coord as Coordinator
-    participant FS as File System
-    
-    User->>API: POST /ingest/file (upload)
-    API->>API: Validate size (< 50MB)
-    API->>API: Check not empty
-    
-    alt Disk > 95%
-        API->>Coord: Check resource status
-        Coord-->>API: should_reject_uploads = True
-        API-->>User: 507 Insufficient Storage
-    end
-    
-    API->>API: Generate job_id (UUID)
-    API->>FS: Write to staging: upload/{job_id[:8]}/filename
-    API->>Coord: Create transaction QUEUED
-    API-->>User: 202 Accepted {job_id, poll_url}
-```
+`POST /ingest/file` (multipart `file=...`) — synchronous:
 
-**File Size Limits**:
+1. Extension check against `supported_ingest_ext` (text formats + PDF).
+2. File written to the vault.
+3. PDF → text extraction via `pdf_extract`; text files read as UTF-8.
+4. `TextChunker` splits content into chunks.
+5. Each chunk is embedded via Ollama (`/api/embeddings`, `nomic-embed-text`).
+6. Chunks + embeddings inserted into `vectors.db` in one transaction.
+7. Entities extracted into the knowledge graph.
+8. WAL entry appended for the audit trail.
 
-| Config | Default | Max |
-|--------|---------|-----|
-| `max_upload_size` | 50 MB | Environment variable |
+Response: `{"status", "files_uploaded", "chunks_indexed", "message"}`.
 
-**Supported Extensions**:
-`.txt`, `.md`, `.py`, `.rs`, `.js`, `.ts`, `.html`, `.css`, `.json`, `.yaml`, `.yml`, `.toml`, `.cfg`, `.ini`
+**Supported extensions**: `.txt .md .json .yaml .yml .csv .xml .html .htm .rs .py .js .ts .toml .pdf .c .h .cpp .hpp .cc .cxx .go` and other code files.
+
+> **Embedding model is fixed.** The index must stay in one embedding space. `VectorStore.add_chunks` rejects vectors whose dimension differs from the existing index (default `nomic-embed-text`, 768-dim).
 
 ### Step 2: Chunking
 
-```mermaid
-graph TD
-    A[Raw Document\n5000 words] --> B[TextChunker.chunk]
-    B --> C{Split by chunk_size}
-    C -->|chunk_size: 512| D[Chunk 1: 512 tokens]
-    C -->|overlap: 64| E[Chunk 2: 512 tokens\n64 overlap with Chunk 1]
-    C -->|...| F[Chunk N: remaining tokens]
-    
-    D --> G[Add metadata:\nsource, chunk_index,\ntimestamp]
-    E --> G
-    F --> G
-    
-    G --> H[List of Chunk objects\nready for embedding]
-```
-
-**Chunking Parameters**:
+`TextChunker` splits by paragraphs and packs into fixed-size chunks:
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `chunk_size` | 512 tokens | Larger chunks = more context per retrieval, but noisier |
-| `chunk_overlap` | 64 tokens | Overlap prevents context loss at chunk boundaries |
+| `chunk_size` | 512 tokens | Larger = more context per retrieval, noisier |
+| `chunk_overlap` | 64 tokens | Preserves context across chunk boundaries |
 
-**Chunk Object**:
-
-```python
-@dataclass
-class Chunk:
-    text: str              # The chunk text
-    source: str            # Original file path
-    chunk_index: int       # Position in document (0, 1, 2, ...)
-    metadata: dict         # Custom metadata
-    embedding: List[float] # Populated during embedding step
-```
+Each `Chunk` carries `text`, `source`, `index`, and `token_count`.
 
 ### Step 3: Embedding
 
-```mermaid
-graph LR
-    A[Chunk 1 text] --> B[Embedding Model\ntext-embedding-nomic-embed-text-v1.5]
-    C[Chunk 2 text] --> B
-    D[Chunk N text] --> B
-    
-    B --> E[768-dimensional vector]
-    
-    E --> F[Batch processing\nReduces API calls]
-    F --> G[Embedded chunks\nready for storage]
-```
-
-**Embedding Configuration**:
-
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Model | `text-embedding-nomic-embed-text-v1.5` | Nomic's embedding model |
-| Dimensions | 768 | Fixed vector size |
-| Batch size | Auto | Batches chunks for efficiency |
-| Endpoint | `http://localhost:1234` | LMStudio or remote |
+`OllamaBridge.embed()` tries each configured embed model in order until one responds. On the production box this is `nomic-embed-text` (768-dim vectors, ~0.4s/chunk).
 
 ### Step 4: Storage
 
-```mermaid
-graph TD
-    A[Embedded Chunks] --> B[VectorStore.add]
-    B --> C{Store in SQLite}
-    C --> D[Vectors table\n(chunk_id, vector blob, metadata)]
-    C --> E[Chunks table\n(chunk_id, text, source, metadata)]
-    
-    D --> F[HNSW index\nfor fast similarity search]
-    E --> G[Full-text search\nfor keyword matching]
-    
-    B --> H{Store in Knowledge Graph}
-    H --> I[Entities table\nextracted concepts]
-    H --> J[Relations table\nconnections between entities]
-    H --> K[Document context table\nsource summaries]
-```
-
-**Storage Schema**:
-
-```sql
--- Vector store
-CREATE TABLE chunks (
-    id INTEGER PRIMARY KEY,
-    source TEXT,
-    chunk_index INTEGER,
-    text TEXT,
-    metadata TEXT,
-    tokens INTEGER
-);
-
-CREATE TABLE vectors (
-    id INTEGER PRIMARY KEY REFERENCES chunks(id),
-    embedding BLOB  -- Packed float array
-);
-```
+Vectors are L2-normalized and stored as packed float blobs. Search computes cosine similarity as a dot product over the normalized vectors. WAL journaling keeps the DB crash-safe.
 
 ---
 
-## Query Workflow — Step by Step
+## Query Workflow
 
 ### Step 1: Receive Query
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant API as RAG API
-    participant Coord as Coordinator
-    participant Pipeline as RAG Pipeline
-    
-    User->>API: POST /query {query, top_k, threshold}
-    API->>Coord: Check circuit breaker
-    alt Circuit Open
-        Coord-->>API: CircuitOpenError
-        API-->>User: 503 Service Unavailable
-        Note over API,User: Fall back to KG cached answers
-    end
-    
-    API->>Coord: Check resources
-    alt RAM > 90% or Disk > 95%
-        Coord-->>API: ResourceError
-        API-->>User: 507 Insufficient Storage
-    end
-    
-    API->>Coord: Create transaction
-    Coord-->>API: tx (QUEUED)
-    API->>Pipeline: pipeline.query(query)
-```
-
-### Step 2: Retrieve
-
-```mermaid
-graph TD
-    A[User Question\n"What is WireGuard?"] --> B[Embed Question\nsame model as chunks]
-    B --> C[768-dim Question Vector]
-    
-    C --> D{Vector Similarity Search}
-    D --> E[Cosine Similarity\nagainst all chunk vectors]
-    E --> F[Rank by similarity score]
-    
-    F --> G{Apply filters}
-    G -->|top_k: 5| H[Take top 5 matches]
-    G -->|threshold: 0.65| I[Filter below threshold]
-    
-    H --> J[RRF Fusion\nif multiple retrieval methods]
-    I --> J
-    
-    J --> K[Final Context\n5 chunks with scores]
-```
-
-**Retrieval Parameters**:
-
-| Parameter | Default | Effect |
-|-----------|---------|--------|
-| `top_k` | 5 | Number of chunks to retrieve |
-| `similarity_threshold` | 0.65 | Minimum cosine similarity |
-| `rrf_k` | 60 | RRF (Reciprocal Rank Fusion) constant |
-
-### Step 3: Generate
-
-```mermaid
-sequenceDiagram
-    participant Pipeline
-    participant KG as Knowledge Graph
-    participant Generator
-    participant LM as LLM (LMStudio)
-    
-    Pipeline->>KG: get_personal_context(query)
-    KG-->>Pipeline: User profile, related entities, recent queries
-    
-    Pipeline->>Pipeline: Build prompt:
-    Note over Pipeline: System: "You are Aetheris..."<br/>Context: [retrieved chunks]<br/>Personal: [KG context]<br/>Question: "What is WireGuard?"
-    
-    Pipeline->>Generator: generate(query, context, history)
-    Generator->>LM: POST /v1/chat/completions
-    Note over LM: Model: microsoft/phi-4-reasoning-plus<br/>Temperature: 0.1<br/>Max tokens: 2048
-    LM-->>Generator: Generated response
-    Generator-->>Pipeline: LLMResponse(text, tokens, model)
-```
-
-**System Prompt**:
-
-```
-You are Aetheris, a personal AI assistant. Answer questions based on the
-provided context. If the context doesn't contain relevant information,
-say so clearly. Never fabricate information.
-```
-
-**Generation Parameters**:
-
-| Parameter | Default | Effect |
-|-----------|---------|--------|
-| `temperature` | 0.1 | Low = deterministic, high = creative |
-| `max_tokens` | 2048 | Maximum response length |
-| `request_timeout` | 120s | Timeout for LLM API call |
-
-### Step 4: Return Answer
-
-```mermaid
-graph LR
-    A[Generated Response] --> B[RAGResult Object]
-    B --> C{Include metadata}
-    C --> D[answer: Response text]
-    C --> E[sources: Retrieved chunks with scores]
-    C --> F[query: Original question]
-    C --> G[model: LLM model used]
-    C --> H[response_time: Total time]
-    C --> I[tokens_used: Token count]
-    C --> J[chunks_searched: Number of chunks]
-    
-    B --> K[JSON Response to User]
-```
-
-**Response Format**:
+`POST /query`:
 
 ```json
 {
-  "answer": "WireGuard is a modern VPN protocol...",
-  "sources": [
-    {"source": "docs/networking.md", "score": 0.89, "chunk_index": 3},
-    {"source": "docs/wireguard.txt", "score": 0.85, "chunk_index": 0}
-  ],
-  "query": "What is WireGuard?",
-  "model": "microsoft/phi-4-reasoning-plus",
-  "response_time": 2.456,
-  "tokens_used": 1245,
-  "chunks_searched": 5
+  "query": "What is the project structure?",
+  "reasoning_enabled": false,
+  "top_k": 5,
+  "reranker_enabled": false
 }
 ```
 
----
+Only `query` is required; the rest default to the saved config.
 
-## Reasoning Loop (Advanced)
+### Step 2: Retrieve
 
-For complex questions, the reasoning loop iteratively refines answers:
+1. Query text is embedded with the same model as the index.
+2. `VectorStore.search` returns `top_k * 3` candidates by cosine similarity.
+3. If `reranker_enabled` and the Ollama build exposes `/api/rerank`, candidates are re-scored and re-sorted. On older Ollama builds (e.g. 0.24.0) rerank returns 404 — the handler **falls back to vector-search order** and logs a warning.
+4. Candidates are always truncated to `top_k` before prompting.
 
-```mermaid
-graph TD
-    A[Initial Question] --> B[Iteration 1\nTemperature: 0.8]
-    B --> C[Draft Answer]
-    C --> D{Self-Verify}
-    
-    D -->|Confidence >= threshold| G[Return Answer]
-    D -->|Confidence < threshold| E[Iteration 2\nTemperature: 0.5]
-    
-    E --> F[Refined Answer]
-    F --> H{Self-Verify}
-    
-    H -->|Confidence >= threshold| G
-    H -->|Confidence < threshold & iterations < max| I[Iteration 3\nTemperature: 0.1]
-    
-    I --> J[Final Answer]
-    J --> G
-    
-    G --> K[Pregel Checkpoint\nSave state to disk]
-    K --> L[Store in KG\nConverged answer]
+### Step 3: Generate
+
+The prompt embeds each chunk as `[Source: <file>] (relevance: X)`, appends a code-context hint when the query looks like code, and asks the model to return **only valid JSON**:
+
+```json
+{ "answer": "...", "sources": [...], "confidence": 0.0-1.0, "reasoning": "..." }
 ```
 
-**Reasoning Parameters**:
+Generation uses `query_model` (default `phi4-mini` on CPU) with a configurable timeout (`timeout_secs`, default 300s).
 
-| Parameter | Default | Range |
-|-----------|---------|-------|
-| `reasoning_enabled` | false | true/false |
-| `max_iterations` | 3 | 1-10 |
-| `confidence_threshold` | 0.7 | 0.0-1.0 |
-| `temperature_schedule` | 0.8→0.5→0.1 | Annealing schedule |
+### Step 4: Return Answer
 
-**Temperature Schedule** (Hegelian Dialectic):
+```json
+{
+  "query": "...",
+  "answer": "...",
+  "model": "phi4-mini",
+  "sources": [{"source": "doc.pdf", "score": 0.82}],
+  "confidence": 0.87,
+  "top_k": 5,
+  "chunks_searched": 5,
+  "reranker_used": false,
+  "took_ms": 1830
+}
+```
 
-| Iteration | Temperature | Purpose |
-|-----------|------------|---------|
-| 1 | 0.8 | High creativity — explore diverse approaches |
-| 2 | 0.5 | Balanced — refine promising direction |
-| 3+ | 0.1 | Low creativity — converge to precise answer |
+If the model returns unparseable text, the raw response is returned with `confidence: 0.5`. If generation times out or fails, the endpoint returns `503`.
+
+### Reasoning Mode
+
+`reasoning_enabled: true` asks the model to explain its thought process and include a `reasoning` field. This is **not** an iterative loop — there is no temperature annealing or self-verification in the Rust core.
 
 ---
 
-## Knowledge Graph Integration
+## Configuration
 
-### Entity Extraction on Ingest
+Stored in `rag_config.json` (auto-created from defaults on first run; loaded at startup).
 
-```mermaid
-graph TD
-    A[Document Chunks] --> B[Entity Extraction\nvia LLM or NLP]
-    B --> C{Entity Types}
-    C --> D[Concepts]
-    C --> E[Tools]
-    C --> F[Projects]
-    C --> G[Technologies]
-    C --> H[People]
-    C --> I[Files]
-    
-    B --> J{Relation Types}
-    J --> K[depends_on]
-    J --> L[uses]
-    J --> M[created_by]
-    J --> N[related_to]
-    J --> O[implements]
-    
-    D --> P[Store in KG\nSQLite tables]
-    E --> P
-    F --> P
-    G --> P
-    H --> P
-    I --> P
-    
-    K --> P
-    L --> P
-    M --> P
-    N --> P
-    O --> P
+`GET /config` returns the current config. `PUT /config` accepts a **partial** object and merges it over the current config, so either panel (rag or dev) can save a subset:
+
+```json
+{
+  "chunk_size": 512,
+  "chunk_overlap": 64,
+  "top_k": 5,
+  "query_model": "phi4-mini",
+  "reasoning_enabled": false,
+  "embed_models": ["nomic-embed-text"],
+  "reranker_model": "bge-reranker-v2-m3",
+  "reranker_enabled": false,
+  "timeout_secs": 300
+}
 ```
 
-### Query Enrichment
-
-When a query arrives, the KG provides personal context:
-
-```python
-# Before sending to LLM, enrich with KG context
-personal_context = kg.get_personal_context(query)
-# Returns:
-# ## User Profile
-# - role: software engineer
-# - interests: networking, security
-#
-# ## Relevant Concepts
-# - WireGuard (technology, importance: 8.5)
-# - VPN (concept, importance: 7.2)
-#
-# ## Your Recent Related Questions
-# - Q: How do I set up a VPN?
-```
-
----
-
-## Background Job Processing
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant API as RAG API
-    participant BG as Background Thread
-    participant Pipeline as RAG Pipeline
-    participant FS as File System
-    
-    Client->>API: POST /ingest/file (wait=false)
-    API->>API: Generate job_id
-    API->>API: Write to staging
-    API->>API: Create job record (QUEUED)
-    API-->>Client: 202 {job_id, poll_url}
-    
-    API->>BG: background_tasks.add_task(_ingest_background)
-    
-    BG->>Pipeline: ingest_file(staging_path)
-    BG->>API: Update job (PROCESSING)
-    Pipeline-->>BG: Ingest stats
-    
-    BG->>FS: Move to storage/{year}/{month}/
-    BG->>API: Update job (COMPLETED)
-    
-    Client->>API: GET /jobs/{job_id}
-    API-->>Client: {status: "completed", chunks_created: 15, ...}
-```
-
-**Job States**:
-
-| State | Meaning | Client Action |
-|-------|---------|---------------|
-| `queued` | Waiting to start | Poll `/jobs/{id}` |
-| `processing` | Currently ingesting | Poll `/jobs/{id}` |
-| `completed` | Success | Retrieve stats |
-| `failed` | Error occurred | Check `error` field |
-
-**Polling Endpoints**:
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/jobs/{job_id}` | GET | Get single job status |
-| `/jobs` | GET | List recent jobs |
-| `/ingest/stats` | GET | Overall ingest statistics |
-
----
-
-## Error Scenarios
-
-### Scenario 1: Engine Down
-
-```mermaid
-graph TD
-    A[Query arrives] --> B{Circuit breaker status}
-    B -->|CLOSED| C[Proceed to query]
-    B -->|OPEN| D{Timeout elapsed?}
-    
-    D -->|No| E[Return 503 immediately\nCircuitOpenError]
-    D -->|Yes| F[HALF_OPEN: allow test request]
-    
-    F --> G{Test succeeds?}
-    G -->|Yes| H[CLOSED: resume normal]
-    G -->|No| I[OPEN: block again]
-    
-    E --> J[Client: fall back to KG\ncached answers if available]
-```
-
-### Scenario 2: Out of Memory
-
-```mermaid
-graph TD
-    A[Query arrives] --> B[ResourceMonitor.check]
-    B --> C{RAM > 90%?}
-    C -->|Yes| D[Force open circuit]
-    D --> E[Return 507\nResourceError]
-    E --> F[Kill heavy jobs]
-    F --> G[Flush RAM to disk]
-    G --> H[Trigger cleanup]
-    
-    C -->|No| I{RAM > 80%?}
-    I -->|Yes| J[Proceed but flag\nfor RAM→Disk spillover]
-    I -->|No| K[Normal processing]
-```
-
-### Scenario 3: Queue Full
-
-```mermaid
-graph TD
-    A[Query arrives] --> B{Active < max_concurrent?}
-    B -->|No| C{Queue depth < max_queue?}
-    B -->|Yes| D[Execute immediately]
-    
-    C -->|No| E[Return 503\nQueueFullError]
-    C -->|Yes| F[Enqueue, wait for slot]
-    
-    F --> G[Slot becomes available]
-    G --> D
-    
-    E --> H[Client: retry with backoff]
-```
-
----
-
-## Performance Characteristics
-
-| Metric | Typical Value | Notes |
-|--------|--------------|-------|
-| Chunking speed | ~1000 chunks/sec | CPU-bound, fast |
-| Embedding speed | ~50 chunks/sec | Depends on model and hardware |
-| Retrieval latency | < 50ms | Vector similarity search |
-| Generation latency | 1-5 seconds | Depends on model and response length |
-| Total query latency | 1-10 seconds | Mostly generation time |
-| Memory per query | ~50-200 MB | Context window + embeddings |
-
----
-
-## Configuration Reference
-
-All settings in `rag_core/config.py`:
-
-```python
-@dataclass
-class RAGConfig:
-    # LLM endpoint
-    ai_endpoint: str = "http://localhost:1234"
-    chat_model: str = "microsoft/phi-4-reasoning-plus"
-    embedding_model: str = "text-embedding-nomic-embed-text-v1.5"
-    
-    # Chunking
-    chunk_size: int = 512
-    chunk_overlap: int = 64
-    
-    # Retrieval
-    top_k: int = 5
-    similarity_threshold: float = 0.65
-    rrf_k: int = 60
-    max_history: int = 10
-    
-    # Generation
-    temperature: float = 0.1
-    max_tokens: int = 2048
-    request_timeout: int = 120
-    
-    # Storage
-    db_path: str = "/app/rag_data/vectors.db"
-    upload_dir: str = "/app/uploads"
-    storage_dir: str = "/app/storage"
-    max_upload_size: int = 50 * 1024 * 1024  # 50MB
-    
-    # Knowledge Graph
-    graph_db_path: str = "/app/rag_data/knowledge_graph.db"
-```
+> `reranker_enabled` defaults to **false** because the deployed Ollama 0.24.0 does not expose `/api/rerank`. Enable it only after upgrading Ollama to a build with rerank support and pulling `bge-reranker-v2-m3`.
 
 ---
 
 ## API Reference
 
-### Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/query` | POST | Ask a question against indexed documents |
+| `/ingest/file` | POST | Upload + index a file (multipart) |
+| `/sources` | GET | List indexed sources with chunk counts |
+| `/sources/{name}` | DELETE | Remove a source (file + vector chunks) |
+| `/stats` | GET | Knowledge base statistics |
+| `/config` | GET / PUT | Read / merge-update RAG configuration |
+| `/v1/models` | GET | List available Ollama models |
+| `/knowledge-graph/stats` | GET | Entity/relation counts |
+| `/knowledge-graph/entities` | GET | List entities |
+| `/knowledge-graph/relations` | GET | List relations |
+| `/coordinator/circuits` | GET | Circuit breaker states |
 
-| Endpoint | Method | Description | Auth |
-|----------|--------|-------------|------|
-| `/health` | GET | Health check | None |
-| `/query` | POST | Ask a question | Cookie |
-| `/ingest/file` | POST | Upload file for indexing | Cookie |
-| `/ingest/directory` | POST | Index directory (server-side) | Cookie |
-| `/jobs/{id}` | GET | Get job status | Cookie |
-| `/jobs` | GET | List recent jobs | Cookie |
-| `/ingest/stats` | GET | Ingest statistics | Cookie |
-| `/stats` | GET | Pipeline statistics | Cookie |
-| `/sources` | GET | List indexed sources | Cookie |
-| `/sources/{path}` | DELETE | Remove a source | Cookie |
-| `/reset` | POST | Clear all data | Cookie |
-
-### Query Parameters
-
-**POST /query**:
-
-```json
-{
-  "query": "What is WireGuard?",
-  "use_rag": true,
-  "top_k": 3,
-  "threshold": 0.7,
-  "include_history": true
-}
-```
-
-**POST /ingest/file**:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `file` | file | required | File to upload |
-| `source` | string | filename | Source name for tracking |
-| `verbose` | bool | false | Enable verbose logging |
-| `wait` | bool | false | Block until complete |
+`/sources` only lists real indexed documents — sqlite artifacts (`vectors.db`, `*-wal`, `*-shm`, `rag_config.json`) are excluded.
 
 ---
 
-## CLI Usage
+## Operations Notes
 
-```bash
-# Index files
-python rag_cli.py ingest docs/
-python rag_cli.py ingest docs/guide.md
-
-# Ask questions
-python rag_cli.py query "How do I configure WireGuard?"
-python rag_cli.py query "What's the weather?" --no-rag
-
-# View stats
-python rag_cli.py stats
-python rag_cli.py sources
-
-# Delete sources
-python rag_cli.py delete docs/manual.pdf
-
-# Reset
-python rag_cli.py reset --force
-
-# Start server
-python rag_cli.py server --host 0.0.0.0 --port 8080
-```
+- **CPU-bound**: On the 4-core production box, `phi4-mini` answers in ~2s once warm; first call pays a ~28s cold load. `qwen3:8b` (thinking) can take >150s — avoid for interactive RAG.
+- **Deleting a source** removes the file from the vault and its chunks/vectors from the index (cascaded by the DB foreign key).
+- **Backups**: copy the vault directory (or at least `vectors.db`, `knowledge_graph.db`, `rag_config.json`). SQLite WAL mode means you should checkpoint before copying (`sqlite3 vectors.db "PRAGMA wal_checkpoint(TRUNCATE);"`).

@@ -101,8 +101,11 @@ pub struct AgentContext {
 | GET | `/api/mcp/tools` | MCP tool listing |
 | GET | `/api/a2a/messages` | A2A message log |
 | GET | `/api/tasks` | Recent tasks |
-| POST | `/api/query` | RAG query |
+| POST | `/api/query` | RAG query (JSON: query, reasoning_enabled, top_k, reranker_enabled) |
+| POST | `/api/ingest/file` | RAG upload + index (multipart) |
 | GET | `/api/sources` | Indexed documents |
+| DELETE | `/api/sources/{name}` | Remove a source (file + vector chunks) |
+| GET / PUT | `/api/config` | Read / merge-update RAG configuration |
 | GET | `/api/stats` | RAG statistics |
 | GET | `/api/knowledge-graph/stats` | KG statistics |
 | GET | `/api/knowledge-graph/entities` | KG entities |

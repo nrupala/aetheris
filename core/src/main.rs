@@ -296,11 +296,43 @@ async fn search_handler(
     axum::Json(serde_json::json!({"query": query, "results": results, "total": 1})).into_response()
 }
 
+/// Returns (total_mb, used_mb) of system memory from /proc/meminfo (Linux).
+/// Returns (0, 0) on non-Linux platforms where meminfo is unavailable.
+fn system_memory_mb() -> (u64, u64) {
+    let Ok(info) = std::fs::read_to_string("/proc/meminfo") else {
+        return (0, 0);
+    };
+    let mut total_kb = 0u64;
+    let mut avail_kb = 0u64;
+    for line in info.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            total_kb = rest
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            avail_kb = rest
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+        }
+    }
+    if total_kb == 0 {
+        return (0, 0);
+    }
+    let total_mb = total_kb / 1024;
+    let used_mb = total_kb.saturating_sub(avail_kb) / 1024;
+    (total_mb, used_mb)
+}
+
 async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let ai_ok = state.model_bridge.list_models().await.is_ok();
     let agents_len = state.agents.lock().unwrap().len();
     let kg_ok = state.knowledge_graph.is_some();
     let vs_ok = state.vector_store.is_some();
+    let (total_mb, used_mb) = system_memory_mb();
     let mut services = vec![
         serde_json::json!({"name": "aetheris_core", "status": if ai_ok { "running" } else { "degraded" }, "port": 8080}),
         serde_json::json!({"name": "vector_store", "status": if vs_ok { "running" } else { "unavailable" }, "port": 0}),
@@ -320,9 +352,11 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         "prompts": 8,
         "ai_connected": ai_ok,
         "cross_system": state.orchestrator_proxy.is_some(),
+        "total_memory_mb": total_mb,
+        "memory_used_mb": used_mb,
         "spread_forecast": {
-            "total_memory_mb": agents_len * 256,
-            "memory_utilization_pct": 0,
+            "total_memory_mb": total_mb,
+            "memory_utilization_pct": used_mb.saturating_mul(100).checked_div(total_mb).unwrap_or(0),
             "confidence": 0.85,
             "bottleneck": "none"
         }
@@ -402,11 +436,18 @@ async fn rag_query_handler(
                                 .partial_cmp(&a.score)
                                 .unwrap_or(std::cmp::Ordering::Equal)
                         });
-                        chunks.truncate(top_k);
+                    } else {
+                        push_dev_log(
+                            &state,
+                            "WARN",
+                            &format!(
+                                "Reranker unavailable ({}): falling back to vector search order",
+                                cfg.reranker_model
+                            ),
+                        );
                     }
-                } else {
-                    chunks.truncate(top_k);
                 }
+                chunks.truncate(top_k);
                 Some(chunks)
             } else {
                 None
@@ -470,7 +511,7 @@ async fn rag_query_handler(
             ""
         };
         format!(
-            "Context:\n{}\n\nQuestion: {}\n\nAnswer based on the context above.{}{}\n\nReturn ONLY valid JSON (no markdown, no code fences) {{\"answer\", \"sources\" (list of source filenames), \"confidence\" (0.0-1.0){}}}.",
+            "Context:\n{}\n\nQuestion: {}\n\nAnswer based on the context above.{}{}\n\nReturn ONLY valid JSON (no markdown, no code fences) where \"answer\" is a concise string (2-4 sentences), \"sources\" is a list of source filenames, and \"confidence\" is 0.0-1.0{}}}.",
             context, query, reasoning, code_hint,
             if use_reasoning { ", \"reasoning\" (string)" } else { "" }
         )
@@ -480,7 +521,7 @@ async fn rag_query_handler(
 
     match state
         .model_bridge
-        .query_with_timeout(&prompt, &cfg.query_model, cfg.timeout_secs)
+        .query_with_timeout(&prompt, &cfg.query_model, cfg.timeout_secs, Some(256))
         .await
     {
         Ok(response) => {
@@ -512,8 +553,19 @@ async fn rag_query_handler(
             let took_ms = start.elapsed().as_millis();
             let answer_preview = parsed
                 .get("answer")
-                .and_then(|v| v.as_str())
-                .unwrap_or(&response);
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Null => String::new(),
+                    other => other.to_string(),
+                })
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| {
+                    if response.trim_start().starts_with('{') && response.contains("\"answer\"") {
+                        "No answer could be generated for this query. Try rephrasing, or check that relevant documents are indexed.".to_string()
+                    } else {
+                        response.clone()
+                    }
+                });
             let conf = parsed
                 .get("confidence")
                 .and_then(|v| v.as_f64())
@@ -579,27 +631,25 @@ async fn rag_sources_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
         vec![]
     };
 
+    let indexed: std::collections::HashSet<String> = sources
+        .iter()
+        .filter_map(|s| s["source"].as_str().map(String::from))
+        .collect();
+
     if let Ok(mut entries) = tokio::fs::read_dir(&state.vault_path).await {
         loop {
             match entries.next_entry().await {
                 Ok(Some(entry)) => {
                     let path = entry.path();
-                    if path.is_file()
-                        && !sources.iter().any(|s| {
-                            s["name"].as_str()
-                                == Some(
-                                    path.file_name()
-                                        .map(|n| n.to_string_lossy())
-                                        .as_deref()
-                                        .unwrap_or(""),
-                                )
-                        })
-                    {
+                    if path.is_file() {
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        if is_vault_artifact(&name) || indexed.contains(&name) {
+                            continue;
+                        }
                         if let Ok(meta) = entry.metadata().await {
-                            let name = path
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default();
                             sources.push(serde_json::json!({
                                 "source": name,
                                 "size": meta.len(),
@@ -618,6 +668,16 @@ async fn rag_sources_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
     axum::Json(serde_json::json!({"sources": sources})).into_response()
 }
 
+fn is_vault_artifact(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower == "rag_config.json"
+        || lower.ends_with(".db")
+        || lower.ends_with(".db-wal")
+        || lower.ends_with(".db-shm")
+        || lower.ends_with(".wal")
+        || lower.ends_with(".shm")
+}
+
 async fn delete_source_handler(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
@@ -626,27 +686,34 @@ async fn delete_source_handler(
     if !path.starts_with(&state.vault_path) {
         return (StatusCode::FORBIDDEN, "Access Denied").into_response();
     }
-    match tokio::fs::remove_file(&path).await {
-        Ok(_) => {
-            push_dev_log(&state, "INFO", &format!("File deleted: {}", name));
-            state
-                .wal
-                .lock()
-                .unwrap()
-                .append(wal::WalEntry::FileDelete {
-                    filename: name.clone(),
-                })
-                .ok();
-            axum::Json(serde_json::json!({"status": "deleted", "name": name})).into_response()
-        }
-        Err(_) => {
-            push_dev_log(&state, "WARN", &format!("File delete NOT FOUND: {}", name));
-            (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"status": "not_found", "name": name})),
-            )
-                .into_response()
-        }
+    let removed = tokio::fs::remove_file(&path).await.is_ok();
+    let mut purged = 0usize;
+    if let Some(ref store) = state.vector_store {
+        purged = store.delete_source(&name).unwrap_or(0);
+    }
+    if removed || purged > 0 {
+        push_dev_log(
+            &state,
+            "INFO",
+            &format!("Source deleted: {} ({} chunks purged)", name, purged),
+        );
+        state
+            .wal
+            .lock()
+            .unwrap()
+            .append(wal::WalEntry::FileDelete {
+                filename: name.clone(),
+            })
+            .ok();
+        axum::Json(serde_json::json!({"status": "deleted", "name": name, "chunks_purged": purged}))
+            .into_response()
+    } else {
+        push_dev_log(&state, "WARN", &format!("File delete NOT FOUND: {}", name));
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"status": "not_found", "name": name})),
+        )
+            .into_response()
     }
 }
 
@@ -658,6 +725,10 @@ async fn rag_stats_handler(State(state): State<Arc<AppState>>) -> impl IntoRespo
             match entries.next_entry().await {
                 Ok(Some(entry)) => {
                     if entry.path().is_file() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if is_vault_artifact(&name) {
+                            continue;
+                        }
                         file_count += 1;
                         if let Ok(meta) = entry.metadata().await {
                             total_size += meta.len();
@@ -670,6 +741,7 @@ async fn rag_stats_handler(State(state): State<Arc<AppState>>) -> impl IntoRespo
         }
     }
     let store_stats = state.vector_store.as_ref().and_then(|s| s.stats().ok());
+    let cfg = state.rag_config.lock().unwrap().clone();
     axum::Json(serde_json::json!({
         "documents": file_count,
         "total_chunks": store_stats.as_ref().map(|s| s.total_chunks).unwrap_or(file_count as i64 * 3),
@@ -679,7 +751,7 @@ async fn rag_stats_handler(State(state): State<Arc<AppState>>) -> impl IntoRespo
         "total_sources": store_stats.as_ref().map(|s| s.total_sources).unwrap_or(0),
         "db_size_mb": store_stats.as_ref().map(|s| s.db_size_mb).unwrap_or(0.0),
         "collections": 1,
-        "avg_chunk_size": total_size.checked_div(file_count).unwrap_or(0),
+        "avg_chunk_size": cfg.chunk_size,
     })).into_response()
 }
 
@@ -690,15 +762,49 @@ async fn rag_config_get_handler(State(state): State<Arc<AppState>>) -> impl Into
 
 async fn rag_config_put_handler(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<rag::RagConfig>,
+    Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    let current = state.rag_config.lock().unwrap().clone();
+    let Some(map) = payload.as_object() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Expected a JSON object"})),
+        )
+            .into_response();
+    };
+    let mut merged = serde_json::to_value(&current).unwrap_or_default();
+    let Some(merged_map) = merged.as_object_mut() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Failed to serialize current config"})),
+        )
+            .into_response();
+    };
+    for (k, v) in map {
+        merged_map.insert(k.clone(), v.clone());
+    }
+    let updated = match serde_json::from_value::<rag::RagConfig>(merged) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid config: {}", e)})),
+            )
+                .into_response();
+        }
+    };
     {
         let mut cfg = state.rag_config.lock().unwrap();
-        *cfg = payload;
+        *cfg = updated.clone();
         cfg.save(&state.vault_path);
     }
+    push_dev_log(
+        &state,
+        "INFO",
+        &format!("RAG config saved: model={}", updated.query_model),
+    );
     let cfg = state.rag_config.lock().unwrap().clone();
-    axum::Json(serde_json::json!({"status": "saved", "config": cfg}))
+    axum::Json(serde_json::json!({"status": "saved", "config": cfg})).into_response()
 }
 
 fn supported_ingest_ext(name: &str) -> bool {
@@ -1270,10 +1376,11 @@ async fn orchestrator_forecast_handler(State(state): State<Arc<AppState>>) -> im
     } else {
         0
     };
+    let (total_mb, used_mb) = system_memory_mb();
     axum::Json(serde_json::json!({
         "forecast": {
-            "total_memory_mb": total * 256,
-            "memory_utilization_pct": utilization,
+            "total_memory_mb": total_mb,
+            "memory_utilization_pct": used_mb.saturating_mul(100).checked_div(total_mb).unwrap_or(utilization),
             "confidence": 0.85,
             "bottleneck": if utilization > 80 { "agents" } else { "none" },
         },
@@ -1738,6 +1845,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let orch_url = std::env::var("ORCHESTRATOR_ENDPOINT").ok();
     let ai_model = std::env::var("AI_MODEL").unwrap_or_else(|_| cfg.fallback_model.clone());
     let embed_fallback_models = cfg.embed_fallback_model.clone();
+    let rag_cfg_init = rag::RagConfig::load(&vault_path);
     let web_root = cfg.web_root.clone();
     let openai_proxy = OpenAiProxy::new(format!("{}/v1", cfg.ai_endpoint));
 
@@ -1769,7 +1877,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut ollama = implementation::OllamaBridge::new(ai_url.clone());
     ollama.default_model = ai_model.clone();
-    ollama.embed_fallback_models = vec![embed_fallback_models];
+    ollama.embed_fallback_models = if rag_cfg_init.embed_models.is_empty() {
+        vec![embed_fallback_models]
+    } else {
+        rag_cfg_init.embed_models.clone()
+    };
     let model_bridge: Arc<dyn ModelBridge> = Arc::new(ollama);
     let security_bridge: Arc<dyn SecurityBridge> =
         Arc::new(implementation::OpaBridge::new(opa_url.clone()));
@@ -1873,7 +1985,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     guardian.snapshot("milestone", "system_startup");
     println!("Guardian online — Chronicle snapshot captured");
 
-    let rag_config = Arc::new(Mutex::new(rag::RagConfig::load(&vault_path)));
+    let rag_config = Arc::new(Mutex::new(rag_cfg_init));
     println!(
         "RAG config loaded from {:?}",
         vault_path.join("rag_config.json")

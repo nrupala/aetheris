@@ -25,6 +25,7 @@ pub trait ModelBridge: AetherisBridge {
         prompt: &str,
         model: &str,
         _timeout_secs: u64,
+        _max_tokens: Option<u32>,
     ) -> Result<String, String> {
         self.query(prompt, model).await
     }

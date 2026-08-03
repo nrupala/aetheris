@@ -77,7 +77,20 @@ curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret:
 curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
   https://rag.nrupalakolkar.com/query \
   -H "Content-Type: application/json" \
-  -d '{"query":"What is the project structure?","use_rag":true,"top_k":5,"threshold":0.7}'
+  -d '{"query":"What is the project structure?","reasoning_enabled":false,"top_k":5,"reranker_enabled":false}'
+```
+
+### RAG Config
+```bash
+# Read current config
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  https://rag.nrupalakolkar.com/config
+
+# Partial update (fields not sent keep their current values)
+curl -X PUT -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  https://rag.nrupalakolkar.com/config \
+  -H "Content-Type: application/json" \
+  -d '{"query_model":"phi4-mini","top_k":5}'
 ```
 
 ### RAG Upload

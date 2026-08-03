@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RagConfig {
     pub chunk_size: usize,
     pub chunk_overlap: usize,
@@ -25,7 +26,7 @@ impl Default for RagConfig {
             reasoning_enabled: false,
             embed_models: vec!["nomic-embed-text".to_string()],
             reranker_model: "bge-reranker-v2-m3".to_string(),
-            reranker_enabled: true,
+            reranker_enabled: false,
             timeout_secs: 300,
         }
     }
@@ -521,6 +522,20 @@ impl VectorStore {
         }
 
         let conn = self.conn.lock().unwrap();
+        let existing_dim: i64 = conn
+            .query_row("SELECT dimension FROM embeddings LIMIT 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap_or(0);
+        if existing_dim > 0 {
+            let incoming_dim = embeddings[0].len() as i64;
+            if incoming_dim != existing_dim {
+                return Err(format!(
+                    "Embedding dimension mismatch: index expects {} dims, got {} — switch back to the original embedding model or reindex",
+                    existing_dim, incoming_dim
+                ));
+            }
+        }
         conn.execute("BEGIN IMMEDIATE", [])
             .map_err(|e| format!("Failed to begin transaction: {}", e))?;
         let mut ids = Vec::new();
