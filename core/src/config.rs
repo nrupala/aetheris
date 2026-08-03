@@ -5,6 +5,9 @@ pub struct Config {
     pub vault_path: PathBuf,
     pub ai_endpoint: String,
     pub opa_endpoint: String,
+    #[allow(dead_code)] // enforcement wiring lands in Phase 3
+    pub opa_enforce: bool,
+    pub opa_fail_open: bool,
     pub port: u16,
     pub fallback_model: String,
     pub embed_fallback_model: String,
@@ -18,7 +21,13 @@ impl Config {
             ai_endpoint: std::env::var("AI_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:11434".to_string()),
             opa_endpoint: std::env::var("OPA_ENDPOINT")
-                .unwrap_or_else(|_| "http://opa:8181".to_string()),
+                .unwrap_or_else(|_| "http://127.0.0.1:8181".to_string()),
+            opa_enforce: std::env::var("OPA_ENFORCE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+            opa_fail_open: std::env::var("OPA_FAIL_OPEN")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(true),
             port: std::env::var("PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
@@ -57,26 +66,36 @@ mod tests {
         unsafe {
             std::env::remove_var("AETHERIS_FALLBACK_MODEL");
             std::env::remove_var("AETHERIS_EMBED_FALLBACK_MODEL");
+            std::env::remove_var("OPA_ENFORCE");
+            std::env::remove_var("OPA_FAIL_OPEN");
         }
         let config = Config::new();
         assert_eq!(config.port, 8080);
         assert_eq!(config.ai_endpoint, "http://localhost:11434");
-        assert_eq!(config.opa_endpoint, "http://opa:8181");
+        assert_eq!(config.opa_endpoint, "http://127.0.0.1:8181");
         assert_eq!(config.fallback_model, "qwen2.5:7b");
         assert_eq!(config.embed_fallback_model, "nomic-embed-text");
+        assert!(!config.opa_enforce);
+        assert!(config.opa_fail_open);
         assert!(!config.vault_path.to_string_lossy().starts_with('/'));
         assert!(!config.vault_path.to_string_lossy().starts_with("C:\\"));
 
         unsafe {
             std::env::set_var("AETHERIS_FALLBACK_MODEL", "qwen2.5-coder:7b");
             std::env::set_var("AETHERIS_EMBED_FALLBACK_MODEL", "bge-m3");
+            std::env::set_var("OPA_ENFORCE", "true");
+            std::env::set_var("OPA_FAIL_OPEN", "0");
         }
         let config = Config::new();
         assert_eq!(config.fallback_model, "qwen2.5-coder:7b");
         assert_eq!(config.embed_fallback_model, "bge-m3");
+        assert!(config.opa_enforce);
+        assert!(!config.opa_fail_open);
         unsafe {
             std::env::remove_var("AETHERIS_FALLBACK_MODEL");
             std::env::remove_var("AETHERIS_EMBED_FALLBACK_MODEL");
+            std::env::remove_var("OPA_ENFORCE");
+            std::env::remove_var("OPA_FAIL_OPEN");
         }
     }
 }

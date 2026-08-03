@@ -998,7 +998,14 @@ async fn bridge_ai_query(
         .and_then(|v| v.as_str())
         .unwrap_or("query");
 
-    if !state.security_bridge.authorize(peer_id, action).await {
+    let authz_input = bridge::AuthzInput {
+        identity: peer_id.to_string(),
+        role: "unknown".to_string(),
+        method: "POST".to_string(),
+        path: "/bridge/ai/query".to_string(),
+        action: action.to_string(),
+    };
+    if !state.security_bridge.authorize(&authz_input).await {
         return (
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({"error": "Policy denied"})),
@@ -1074,7 +1081,14 @@ async fn bridge_security_authorize(
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let action = payload.get("action").and_then(|v| v.as_str()).unwrap_or("");
-    let allowed = state.security_bridge.authorize(peer_id, action).await;
+    let authz_input = bridge::AuthzInput {
+        identity: peer_id.to_string(),
+        role: "unknown".to_string(),
+        method: "POST".to_string(),
+        path: "/bridge/security/authorize".to_string(),
+        action: action.to_string(),
+    };
+    let allowed = state.security_bridge.authorize(&authz_input).await;
     axum::Json(serde_json::json!({"allowed": allowed, "peer_id": peer_id, "action": action}))
 }
 
@@ -1883,8 +1897,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         rag_cfg_init.embed_models.clone()
     };
     let model_bridge: Arc<dyn ModelBridge> = Arc::new(ollama);
-    let security_bridge: Arc<dyn SecurityBridge> =
-        Arc::new(implementation::OpaBridge::new(opa_url.clone()));
+    let security_bridge: Arc<dyn SecurityBridge> = Arc::new(implementation::OpaBridge::new(
+        opa_url.clone(),
+        cfg.opa_fail_open,
+    ));
 
     let orchestrator_proxy = orch_url.map(OrchestratorProxy::new);
     let a2a_gateway = A2AGateway::new(300);
