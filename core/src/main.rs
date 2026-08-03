@@ -51,6 +51,7 @@ pub struct AppState {
     pub security_watcher: Arc<watcher::SecurityWatcher>,
     pub ai_url: String,
     pub opa_url: String,
+    pub opa_enforce: bool,
     pub port_registry: serde_json::Value,
     pub dev_logs: Mutex<Vec<LogEntry>>,
     pub wal: Arc<Mutex<wal::WriteAheadLog>>,
@@ -1005,12 +1006,25 @@ async fn bridge_ai_query(
         path: "/bridge/ai/query".to_string(),
         action: action.to_string(),
     };
-    if !state.security_bridge.authorize(&authz_input).await {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "Policy denied"})),
-        )
-            .into_response();
+    let allowed = state.security_bridge.authorize(&authz_input).await;
+    if !allowed {
+        log::warn!(
+            "OPA would DENY {} {} (identity={})",
+            authz_input.method,
+            authz_input.path,
+            authz_input.identity
+        );
+        metrics::SECURITY_VIOLATIONS.inc();
+        // Only enforce when OPA enforcement is enabled (Phase 3 default off) so
+        // standing up OPA does not 403 this path while the identity/role contract
+        // is still being wired.
+        if state.opa_enforce {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({"error": "Policy denied"})),
+            )
+                .into_response();
+        }
     }
 
     state
@@ -2013,6 +2027,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         security_watcher: Arc::new(watcher::SecurityWatcher::new()),
         ai_url,
         opa_url,
+        opa_enforce: cfg.opa_enforce,
         default_model: ai_model,
         port_registry,
         wal: wal_arc.clone(),

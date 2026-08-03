@@ -206,14 +206,10 @@ services:
     restart: unless-stopped
 
   # Policy Engine
-  aetheris_opa:
-    image: openpolicyagent/opa:latest
-    ports:
-      - "8181:8181"
-    volumes:
-      - ./policies:/policies
-    command: run --server --watch /policies
-    restart: unless-stopped
+  # NOTE: In the current native (no-Docker) deployment, OPA is NOT a container.
+  # install-native.sh installs the static opa binary + infra/systemd/opa.service
+  # (loopback-only 127.0.0.1:8181) and deploys config/policy/aetheris.authz.rego
+  # to /etc/aetheris/policy. The container entry below is legacy and removed.
 
   # Metrics Store
   aetheris_stats:

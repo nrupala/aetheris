@@ -1,0 +1,31 @@
+[Unit]
+Description=Open Policy Agent (native, loopback-only)
+# OPA runs on the host loopback. It only serves the aetheris-core on the same host.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Servers check /v1/data/aetheris/authz/allow from the policy bundle under
+# /etc/aetheris/policy (aetheris.authz.rego). Loopback-only: never add 8181 to
+# any tunnel/nginx ingress. --set decision_logs.console=true mirrors the old
+# config/policy/opa_conf.yaml console decision-logging.
+ExecStart=/usr/local/bin/opa run --server --addr 127.0.0.1:8181 --log-level info --set decision_logs.console=true /etc/aetheris/policy
+Restart=on-failure
+RestartSec=3
+
+# --- Hardening ---
+# OPA only reads policy files under /etc/aetheris/policy; the authz decision
+# engine keeps no writable state (decision logs go to stdout).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
