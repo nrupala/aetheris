@@ -1,7 +1,8 @@
 use axum::{
     body::{Body, Bytes},
     extract::{Host, Multipart, Path, Query, State},
-    http::{header, HeaderMap, Method, StatusCode, Uri},
+    http::{header, HeaderMap, Method, Request, StatusCode, Uri},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
     Json, Router,
@@ -1862,6 +1863,83 @@ async fn fusion_query_handler(
 
 // ─── Main ─────────────────────────────────────────────────────────
 
+/// Map Cloudflare Access headers to an OPA role string (pure, unit-tested).
+///
+/// * `email`: `Cf-Access-Authenticated-User-Email` (human users).
+/// * `service_token_client_id`: `Cf-Access-Client-Id` (service-token automation).
+fn access_role(email: &str, service_token_client_id: Option<&str>) -> &'static str {
+    implementation::identity_to_role(
+        if email.is_empty() { None } else { Some(email) },
+        service_token_client_id,
+    )
+    .as_str()
+}
+
+/// Restrict OPA enforcement to mutating/sensitive routes (D2 scope).
+/// GET/static/panels stay under Cloudflare Access.
+fn is_sensitive(method: &str, path: &str) -> bool {
+    matches!(method, "POST" | "PUT" | "DELETE")
+        || [
+            "/upload",
+            "/ingest",
+            "/keys",
+            "/bridge",
+            "/task",
+            "/workflow",
+            "/sync/upload",
+        ]
+        .iter()
+        .any(|p| path.starts_with(p))
+}
+
+/// OPA shadow middleware (Phase 3). Evaluates every request against OPA and
+/// logs + bumps the violation counter on would-deny, but only blocks when
+/// `opa_enforce` is enabled on a sensitive route. `opa_enforce` is false this
+/// phase, so nothing short-circuits.
+async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: Next) -> Response {
+    let headers = req.headers();
+    let email = headers
+        .get("Cf-Access-Authenticated-User-Email")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let client_id = headers
+        .get("Cf-Access-Client-Id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+
+    let method = req.method().as_str().to_string();
+    let path = req.uri().path().to_string();
+    let input = bridge::AuthzInput {
+        identity: email.clone(),
+        role: access_role(&email, client_id.as_deref()).to_string(),
+        method: method.clone(),
+        path: path.clone(),
+        action: "http".to_string(),
+    };
+
+    let allowed = state.security_bridge.authorize(&input).await;
+    if !allowed {
+        log::warn!(
+            "OPA would DENY {} {} ({})",
+            input.method,
+            input.path,
+            if email.is_empty() { "<none>" } else { &email }
+        );
+        metrics::SECURITY_VIOLATIONS.inc();
+        // Enforcement is intentionally off this phase: only 403 mutating/sensitive
+        // routes when opa_enforce=true.
+        if state.opa_enforce && is_sensitive(&method, &path) {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({"error": "Policy denied"})),
+            )
+                .into_response();
+        }
+    }
+    next.run(req).await
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Aetheris Core Active. Zero-Trust Mesh Engaged.");
@@ -2173,6 +2251,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .nest("/api", api_router.clone())
         .merge(api_router)
         .route("/v1/*path", get(v1_proxy_handler).post(v1_proxy_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            opa_gate,
+        ))
         .with_state(state);
 
     let port = cfg.port.to_string();
@@ -2210,4 +2292,221 @@ async fn shutdown_signal() {
     }
 
     println!("Shutdown signal received, starting graceful shutdown...");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bridge::{AetherisBridge, AuthzInput};
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    struct AllowBridge;
+    struct DenyBridge;
+
+    #[async_trait::async_trait]
+    impl AetherisBridge for AllowBridge {
+        fn name(&self) -> &str {
+            "allow"
+        }
+        async fn health_check(&self) -> bool {
+            true
+        }
+    }
+    #[async_trait::async_trait]
+    impl SecurityBridge for AllowBridge {
+        async fn authorize(&self, _input: &AuthzInput) -> bool {
+            true
+        }
+    }
+    #[async_trait::async_trait]
+    impl AetherisBridge for DenyBridge {
+        fn name(&self) -> &str {
+            "deny"
+        }
+        async fn health_check(&self) -> bool {
+            true
+        }
+    }
+    #[async_trait::async_trait]
+    impl SecurityBridge for DenyBridge {
+        async fn authorize(&self, _input: &AuthzInput) -> bool {
+            false
+        }
+    }
+
+    fn test_state(bridge: Arc<dyn SecurityBridge>, opa_enforce: bool) -> Arc<AppState> {
+        let dir = std::env::temp_dir().join(format!("aetheris_opa3_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+        let vault_dir = dir.join("vault");
+        std::fs::create_dir_all(&vault_dir).ok();
+        let wal_dir = dir.join("wal");
+        std::fs::create_dir_all(&wal_dir).ok();
+
+        let ai_url = "http://127.0.0.1:1".to_string();
+        let opa_url = "http://127.0.0.1:1".to_string();
+        let model_bridge: Arc<dyn ModelBridge> =
+            Arc::new(implementation::OllamaBridge::new(ai_url.clone()));
+        let wal_arc: Arc<Mutex<wal::WriteAheadLog>> = Arc::new(Mutex::new(
+            wal::WriteAheadLog::new(&wal_dir.to_string_lossy()).expect("temp WAL"),
+        ));
+        let guardian = Arc::new(Guardian::new(
+            model_bridge.clone(),
+            None,
+            None,
+            wal_arc.clone(),
+            vault_dir.clone(),
+        ));
+
+        Arc::new(AppState {
+            vault_path: vault_dir.clone(),
+            web_root: std::env::temp_dir(),
+            security_watcher: Arc::new(watcher::SecurityWatcher::new()),
+            ai_url: ai_url.clone(),
+            opa_url,
+            opa_enforce,
+            port_registry: serde_json::json!({}),
+            dev_logs: Mutex::new(Vec::new()),
+            wal: wal_arc,
+            model_bridge,
+            security_bridge: bridge,
+            default_model: "test".to_string(),
+            a2a_gateway: Mutex::new(A2AGateway::new(10)),
+            mcp_server: MCPServer::new(),
+            agents: Mutex::new(Vec::new()),
+            orchestrator_proxy: None,
+            openai_proxy: OpenAiProxy::new(format!("{}/v1", ai_url)),
+            key_manager: Arc::new(KeyManager::new(&vault_dir)),
+            vector_store: None,
+            fusion_router: None,
+            guardian,
+            rag_config: Arc::new(Mutex::new(rag::RagConfig::default())),
+            knowledge_graph: None,
+            start_time: std::time::Instant::now(),
+        })
+    }
+
+    async fn test_app(bridge: Arc<dyn SecurityBridge>, opa_enforce: bool) -> Router {
+        let state = test_state(bridge, opa_enforce);
+        let handler = || async { "hello" };
+        Router::new()
+            .route("/sensitive", axum::routing::post(handler))
+            .route("/panel", axum::routing::get(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                opa_gate,
+            ))
+            .with_state(state)
+    }
+
+    #[tokio::test]
+    async fn shadow_passes_through_on_would_deny() {
+        let app = test_app(Arc::new(DenyBridge), false).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/panel")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            axum::body::to_bytes(res.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+            "hello"
+        );
+    }
+
+    #[tokio::test]
+    async fn would_deny_logs_bumps_metric_but_returns_normal_response() {
+        let before = metrics::SECURITY_VIOLATIONS.get() as i64;
+        let app = test_app(Arc::new(DenyBridge), false).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sensitive")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            axum::body::to_bytes(res.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+            "hello"
+        );
+        assert!(metrics::SECURITY_VIOLATIONS.get() as i64 > before);
+    }
+
+    #[tokio::test]
+    async fn allow_decision_passes_through() {
+        let app = test_app(Arc::new(AllowBridge), false).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sensitive")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn enforce_on_sensitive_blocks_denied_request() {
+        let app = test_app(Arc::new(DenyBridge), true).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sensitive")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn is_sensitive_classification() {
+        assert!(is_sensitive("POST", "/query"));
+        assert!(is_sensitive("PUT", "/config"));
+        assert!(is_sensitive("DELETE", "/sources/x"));
+        assert!(is_sensitive("GET", "/upload"));
+        assert!(is_sensitive("GET", "/bridge/ai/query"));
+        assert!(is_sensitive("GET", "/ingest/file"));
+        assert!(is_sensitive("GET", "/keys"));
+        assert!(is_sensitive("GET", "/task/submit"));
+        assert!(is_sensitive("GET", "/workflow/run"));
+        assert!(is_sensitive("GET", "/sync/upload"));
+        assert!(!is_sensitive("GET", "/panel"));
+        assert!(!is_sensitive("GET", "/status"));
+        assert!(!is_sensitive("GET", "/health"));
+    }
+
+    #[test]
+    fn identity_map() {
+        assert_eq!(access_role("nrupalakolkar@gmail.com", None), "admin");
+        assert_eq!(access_role("", Some("abc.def.token")), "analyst");
+        assert_eq!(access_role("", None), "unknown");
+        assert_eq!(access_role("other@example.com", None), "unknown");
+        assert_eq!(
+            access_role("nrupalakolkar@gmail.com", Some("abc.def")),
+            "admin"
+        );
+    }
 }
