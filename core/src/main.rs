@@ -1992,6 +1992,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let security_bridge: Arc<dyn SecurityBridge> = Arc::new(implementation::OpaBridge::new(
         opa_url.clone(),
         cfg.opa_fail_open,
+        cfg.opa_enforce,
     ));
 
     let orchestrator_proxy = orch_url.map(OrchestratorProxy::new);
@@ -2322,6 +2323,12 @@ mod tests {
         async fn authorize(&self, _input: &AuthzInput) -> bool {
             true
         }
+        async fn authorize_agent(&self, _input: &AuthzInput) -> bool {
+            true
+        }
+        fn enforcing(&self) -> bool {
+            false
+        }
     }
     #[async_trait::async_trait]
     impl AetherisBridge for DenyBridge {
@@ -2335,6 +2342,12 @@ mod tests {
     #[async_trait::async_trait]
     impl SecurityBridge for DenyBridge {
         async fn authorize(&self, _input: &AuthzInput) -> bool {
+            false
+        }
+        async fn authorize_agent(&self, _input: &AuthzInput) -> bool {
+            false
+        }
+        fn enforcing(&self) -> bool {
             false
         }
     }

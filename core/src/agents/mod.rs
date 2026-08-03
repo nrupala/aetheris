@@ -159,7 +159,22 @@ impl BaseAgent {
                 path: String::new(),
                 action: action.to_string(),
             };
-            bridge.authorize(&authz_input).await
+            let opa_allowed = bridge.authorize_agent(&authz_input).await;
+            let enforce = bridge.enforcing();
+            if !opa_allowed {
+                log::warn!(
+                    "OPA would DENY agent {} action {} (enforce={})",
+                    self.role.as_str(),
+                    action,
+                    enforce
+                );
+                crate::metrics::SECURITY_VIOLATIONS.inc();
+                // Shadow (enforce off): log the would-deny but allow so agents keep
+                // working while we observe. Enforce: honor the deny.
+                !enforce
+            } else {
+                true
+            }
         } else {
             let local_allowed: bool = match self.role {
                 AgentRole::Researcher => matches!(
@@ -243,5 +258,101 @@ pub fn create_agent(
             model_bridge,
             security_bridge,
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bridge::{AetherisBridge, AuthzInput};
+
+    struct FakeSecurity {
+        allow_agent: bool,
+        enforce: bool,
+    }
+
+    #[async_trait]
+    impl AetherisBridge for FakeSecurity {
+        fn name(&self) -> &str {
+            "fake"
+        }
+        async fn health_check(&self) -> bool {
+            true
+        }
+    }
+    #[async_trait]
+    impl SecurityBridge for FakeSecurity {
+        async fn authorize(&self, _input: &AuthzInput) -> bool {
+            true
+        }
+        async fn authorize_agent(&self, _input: &AuthzInput) -> bool {
+            self.allow_agent
+        }
+        fn enforcing(&self) -> bool {
+            self.enforce
+        }
+    }
+
+    fn base_with(bridge: Arc<dyn SecurityBridge>) -> BaseAgent {
+        BaseAgent::new(
+            AgentRole::Researcher,
+            "model".to_string(),
+            String::new(),
+            None,
+            Some(bridge),
+        )
+    }
+
+    #[tokio::test]
+    async fn check_policy_advisory_allows_on_would_deny() {
+        // Shadow (enforce off): OPA denies but the agent advisory-allows.
+        let mut a = base_with(Arc::new(FakeSecurity {
+            allow_agent: false,
+            enforce: false,
+        }));
+        assert!(a.check_policy("query", "task").await);
+    }
+
+    #[tokio::test]
+    async fn check_policy_enforce_honors_deny() {
+        // Enforce on: OPA denies -> hard block.
+        let mut a = base_with(Arc::new(FakeSecurity {
+            allow_agent: false,
+            enforce: true,
+        }));
+        assert!(!a.check_policy("query", "task").await);
+    }
+
+    #[tokio::test]
+    async fn check_policy_allows_when_opa_allows() {
+        // OPA allows -> allowed in both modes.
+        let mut a = base_with(Arc::new(FakeSecurity {
+            allow_agent: true,
+            enforce: true,
+        }));
+        assert!(a.check_policy("query", "task").await);
+    }
+
+    #[tokio::test]
+    async fn check_policy_enforce_blocks_opa_allow_never() {
+        // allow_agent=true + enforce=true -> always allowed (no false negative).
+        let mut a = base_with(Arc::new(FakeSecurity {
+            allow_agent: true,
+            enforce: false,
+        }));
+        assert!(a.check_policy("query", "task").await);
+    }
+
+    #[tokio::test]
+    async fn check_policy_no_bridge_uses_local_allowlist() {
+        let mut a = BaseAgent::new(
+            AgentRole::Researcher,
+            "model".to_string(),
+            String::new(),
+            None,
+            None,
+        );
+        assert!(a.check_policy("query", "task").await);
+        assert!(!a.check_policy("write", "task").await);
     }
 }

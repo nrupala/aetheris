@@ -20,7 +20,17 @@ pub struct AuthzInput {
 
 #[async_trait]
 pub trait SecurityBridge: AetherisBridge {
+    /// HTTP request authorization (`config/policy/aetheris.authz.rego`).
     async fn authorize(&self, input: &AuthzInput) -> bool;
+
+    /// Agent action authorization (`config/policy/aetheris.agents.rego`).
+    /// POSTs to `/v1/data/aetheris/agents/allow`, not `/authz/allow`.
+    async fn authorize_agent(&self, input: &AuthzInput) -> bool;
+
+    /// Whether OPA enforcement is on for this bridge (single `OPA_ENFORCE` flag).
+    /// Agent `check_policy` uses this for its advisory-vs-enforce fallback, while
+    /// the HTTP middleware reads `AppState.opa_enforce` (both from `cfg.opa_enforce`).
+    fn enforcing(&self) -> bool;
 }
 
 #[async_trait]
