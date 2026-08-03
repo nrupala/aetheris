@@ -3,6 +3,8 @@
 > **Your Sovereign AI-Native Personal Cloud**
 > Zero-trust, zero-knowledge, self-hosted. Replaces commercial cloud services with an encrypted, AI-powered FOSS mesh.
 
+> **⚠️ Current production reality (native deploy):** RAG, the vector store, and the knowledge graph run **natively inside the Rust core** (`aetheris-core :8080`, SQLite under `/data/vault`) — the legacy "Python LLMVM" (port 8081/9090), ChromaDB, and code-server are **not deployed**. LLM inference is Ollama (`:11434`) with `nomic-embed-text` embeddings and `phi4-mini` RAG answers. Sections of this guide that describe the Python orchestrator, ChromaDB, or the Dev Sandbox code-server describe the older architecture; see `guides/rag-pipeline.md` for the current RAG flow.
+
 ---
 
 ## Table of Contents

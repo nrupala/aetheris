@@ -56,23 +56,26 @@ Yes. All inference happens locally on Ollama. No data leaves your machine. The c
 ## RAG
 
 ### What file types are supported?
-PDF, TXT, MD, HTML, JSON, CSV. Maximum file size: 50MB.
+PDF, TXT, MD, HTML, JSON, CSV/TSV, YAML, XML, and common code files (.rs, .py, .js, .ts, .go, .c/.cpp, etc.). Maximum upload size: 50MB.
 
 ### How long does indexing take?
 For a typical 100-page PDF: 10-30 seconds. Depends on file size, chunking, embedding time, and system load.
 
 ### How many documents can I upload?
-Limited only by available storage. Each document is chunked into ~500-token pieces and stored as embeddings in SQLite + ChromaDB.
+Limited only by available storage. Each document is chunked into ~512-token pieces and stored in the SQLite vector store (`vectors.db`) as normalized 768-dim embeddings.
 
-### Why did I get "No relevant results"?
+### Why did I get a weak or empty answer?
 Possible reasons:
 - No documents indexed yet (upload documents first)
-- Query doesn't match any content (try different wording)
-- Similarity threshold too high (try lowering from 0.7 to 0.5)
+- Query doesn't match any indexed content (try different wording)
 - Top K too low (try increasing from 5 to 10)
+- The first query pays a model cold-load cost on CPU — retry once the model is warm
 
 ### What is Reasoning Mode?
-When enabled, the RAG pipeline uses iterative self-verification with temperature annealing (0.8→0.5→0.1) to improve answer quality for complex, multi-part questions. It continues iterating until confidence exceeds the threshold or max iterations are reached.
+When enabled, the model is asked to explain its thought process and returns a `reasoning` field alongside the answer. There is no iterative loop or temperature annealing — generation is a single pass.
+
+### What happened to the reranker?
+Reranking (`bge-reranker-v2-m3`) is disabled by default because the deployed Ollama build does not expose `/api/rerank`. Queries fall back to vector-search order. Enable it only after upgrading Ollama to a build with rerank support.
 
 ## Agents
 

@@ -1,5 +1,7 @@
 # Port Allocation & Service Discovery
 
+> **Current production topology (native deploy, no Docker):** only `8080` (Aetheris Core) and `11434` (Ollama) are in use. `RAG_SERVICE_PORT` (8081), `LLMVM_DEV_PORT` (8443, code-server), `CHROMA_PORT` (8000), and the Docker Compose stack below describe the legacy/optional deployment and are not running on the Oracle box.
+
 Aetheris uses a dynamic port allocation system to avoid conflicts and enable
 zero-trust service discovery at runtime.
 

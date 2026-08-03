@@ -169,9 +169,11 @@ RUST_LOG=debug cargo test
 - **Native systemd deploy** ✅ — install-native.sh + aetheris-core.service (no Docker)
 - **Documentation** ✅ — Restructured to AppDocs format with role-based guides
 - **Help panels** ✅ — All 4 subdomain UIs have comprehensive help panels
-- **Reranker** ✅ — `rerank()` added to `ModelBridge` trait, implemented via Ollama `/api/rerank`, wired into `rag_query_handler` with `RagConfig.reranker_model`/`reranker_enabled`
-- **Model set 2026** ✅ — Updated defaults: `qwen3:8b` (primary / deep reasoning), `bge-reranker-v2-m3` (reranker), `phi4-mini` (lightweight), `phi4-reasoning` (full reasoning)
-- **RAG pipeline live** ✅ — End-to-end RAG on `qwen2.5:1.5b` (CPU): embed → search → generate, 24 sources indexed, 145 chunks, working via localhost:8080 and cloudflared at rag.nrupalakolkar.com with `top_k=3`, 600s timeout, `took_ms` timing fixed
+- **Reranker** ✅ — `rerank()` added to `ModelBridge` trait, implemented via Ollama `/api/rerank`, wired into `rag_query_handler` with `RagConfig.reranker_model`/`reranker_enabled`. ⚠️ **Disabled by default** — deployed Ollama 0.24.0 has no `/api/rerank` (404); queries fall back to vector-search order and are always truncated to `top_k`.
+- **Model set 2026** ✅ — Updated defaults: `qwen3:8b` (primary / deep reasoning), `bge-reranker-v2-m3` (reranker, not installed on box), `phi4-mini` (lightweight — **RAG default**), `phi4-reasoning` (full reasoning)
+- **RAG pipeline live** ✅ — End-to-end RAG on `nomic-embed-text` (embed) + `phi4-mini` (generate) on CPU: embed → search → generate, sources indexed in SQLite `vectors.db`, working via localhost:8080 and cloudflared at rag.nrupalakolkar.com with `top_k=5`, 300s timeout, `took_ms` timing fixed
+- **RAG config save** ✅ — `PUT /config` accepts partial payloads (merged over current config) and persists `rag_config.json`; `serde(default)` + merge semantics
+- **RAG production-readiness pass** ✅ — config-save 422 fixed (partial PUT merge), rerank-failure no longer bloats context (always truncates to `top_k`), `/sources` & `/stats` exclude sqlite/WAL artifacts, `DELETE /sources/{name}` purges vector chunks (FK cascade), `/health` reports real system memory, embed-model dimension guard prevents silent index corruption
 
 ### In Progress
 - **WAL-backed dev logs** — logs endpoint initialized but not dynamically appended

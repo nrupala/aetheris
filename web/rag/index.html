@@ -119,6 +119,7 @@
         .help-panel .method-get { color: var(--green); }
         .help-panel .method-post { color: var(--accent); }
         .help-panel .method-delete { color: var(--red); }
+        .help-panel .method-put { color: var(--yellow); }
         .help-panel .pipeline { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 8px 0; font-family: monospace; font-size: 13px; }
         .help-panel .pipeline .step { padding: 4px 0; }
         .help-panel .pipeline .arrow { color: var(--accent); }
@@ -199,7 +200,10 @@
             </div>
             <div class="settings-group">
                 <label>Embedding Model</label>
-                <select id="embed-model"></select>
+                <select id="embed-model" disabled>
+                    <option value="nomic-embed-text">nomic-embed-text (fixed)</option>
+                </select>
+                <p style="color:var(--muted);font-size:12px;margin-top:8px">Fixed — the vector index must stay in one embedding space. Reindex to switch.</p>
             </div>
             <div class="settings-group">
                 <label>Chunk Size</label>
@@ -221,7 +225,7 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <p style="color:var(--muted);font-size:12px;margin-top:8px">Enable cross-encoder reranking of retrieved chunks</p>
+                <p style="color:var(--muted);font-size:12px;margin-top:8px">Cross-encoder reranking of retrieved chunks (requires Ollama with /api/rerank)</p>
             </div>
             <div class="settings-group">
                 <div class="toggle-row">
@@ -231,13 +235,7 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <p style="color:var(--muted);font-size:12px;margin-top:8px">Enable iterative self-verification for complex questions</p>
-            </div>
-            <div class="settings-group" id="reasoning-settings" style="display:none">
-                <label>Max Iterations</label>
-                <input type="number" id="max-iterations" min="1" max="10" />
-                <label style="margin-top:12px">Confidence Threshold</label>
-                <input type="number" id="confidence-threshold" min="0" max="1" step="0.05" />
+                <p style="color:var(--muted);font-size:12px;margin-top:8px">Ask the model to explain its reasoning in the answer</p>
             </div>
             <button onclick="saveConfig()" style="margin-top:16px;width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">Save Settings</button>
         </div>
@@ -260,25 +258,19 @@
 
             <h3>Architecture</h3>
             <pre><code>Browser → Cloudflare Edge (Access) → Tunnel → Aetheris Core (:8080)
-  → Rust Core (:8080) — API gateway, proxies /query, /ingest, /sources
-    → Python Orchestrator (:9090) — RAG pipeline, embeddings, vector store
-      → Ollama (:11434) — LLM generation (qwen2.5:7b)</code></pre>
+  → Rust Core (:8080) — RAG pipeline, vector store, KG, agents, file ops
+    → Ollama (:11434) — LLM generation (phi4-mini) + embeddings (nomic-embed-text)</code></pre>
             <div class="pipeline">
                 <div class="step">📄 Document Upload → <span class="arrow">→</span> 🔪 Text Chunking</div>
                 <div class="step">🔪 Chunks → <span class="arrow">→</span> 🧮 Embedding Generation</div>
-                <div class="step">🧮 Embeddings → <span class="arrow">→</span> 💾 Vector Store (SQLite + chroma)</div>
+                <div class="step">🧮 Embeddings → <span class="arrow">→</span> 💾 Vector Store (SQLite)</div>
                 <div class="step">❓ Query → <span class="arrow">→</span> 🔍 Semantic Search (top-k)</div>
-                <div class="step">🔍 Results → <span class="arrow">→</span> 🤖 LLM Generation (qwen2.5:7b)</div>
+                <div class="step">🔍 Results → <span class="arrow">→</span> 🤖 LLM Generation (phi4-mini)</div>
                 <div class="step">🤖 Answer → <span class="arrow">→</span> 💬 Response with Sources</div>
             </div>
 
             <h3>Reasoning Mode</h3>
-            <p>When enabled, the RAG pipeline uses an iterative reasoning loop with temperature annealing (0.8→0.5→0.1) and self-verification to improve answer quality for complex questions.</p>
-            <ul>
-                <li><strong>Max Iterations:</strong> Maximum number of reasoning passes (1-10)</li>
-                <li><strong>Confidence Threshold:</strong> Stop iterating when confidence exceeds this value (0.0-1.0)</li>
-                <li><strong>Temperature Annealing:</strong> Automatically decreases temperature across iterations</li>
-            </ul>
+            <p>When enabled, the model is asked to explain its thought process in the response and return a <code>reasoning</code> field alongside the answer.</p>
 
             <h3>Knowledge Graph</h3>
             <p>Entities and relations extracted from your documents are stored in a personal knowledge graph, enabling contextual awareness across queries.</p>
@@ -308,13 +300,9 @@
   -H "Content-Type: application/json" \
   -d '{
     "query": "What is the project structure?",
-    "use_rag": true,
-    "reasoning": true,
-    "max_iterations": 3,
-    "confidence_threshold": 0.7,
+    "reasoning_enabled": false,
     "top_k": 5,
-    "threshold": 0.7,
-    "include_history": true
+    "reranker_enabled": false
   }'</code></pre>
 
             <h4><span class="method-post">POST</span> <code>/ingest/file</code></h4>
@@ -323,22 +311,17 @@
   https://rag.nrupalakolkar.com/ingest/file \
   -F "file=@document.pdf"</code></pre>
 
-            <h4><span class="method-post">POST</span> <code>/ingest/directory</code></h4>
-            <p>Index an entire directory.</p>
-            <pre><code>curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
-  "https://rag.nrupalakolkar.com/ingest/directory?path=/config/workspace/docs"</code></pre>
-
             <h4><span class="method-get">GET</span> <code>/stats</code></h4>
             <p>Get knowledge base statistics (chunks, sources, DB size).</p>
 
             <h4><span class="method-get">GET</span> <code>/sources</code></h4>
             <p>List all indexed documents with chunk counts and timestamps.</p>
 
-            <h4><span class="method-delete">DELETE</span> <code>/sources/{path}</code></h4>
-            <p>Remove a specific document from the index.</p>
+            <h4><span class="method-delete">DELETE</span> <code>/sources/{name}</code></h4>
+            <p>Remove a document from the index (file and its vector chunks).</p>
 
-            <h4><span class="method-post">POST</span> <code>/reset</code></h4>
-            <p>Clear all indexed data (irreversible).</p>
+            <h4><span class="method-get">GET</span> <code>/config</code> <span class="method-put">PUT</span> <code>/config</code></h4>
+            <p>Read or update RAG configuration (chunking, models, reranker, reasoning).</p>
 
             <h3>Supported File Types</h3>
             <ul>
@@ -353,9 +336,11 @@
             <h3>Settings Explained</h3>
             <ul>
                 <li><strong>Top K:</strong> Number of most relevant chunks to retrieve (default: 5). Higher = more context but slower</li>
-                <li><strong>Similarity Threshold:</strong> Minimum cosine similarity score (0.0-1.0). Higher = stricter matches</li>
                 <li><strong>Model:</strong> LLM used for answer generation (pulled from AI service)</li>
-                <li><strong>Reasoning Mode:</strong> Enables iterative self-verification for complex questions</li>
+                <li><strong>Embedding Model:</strong> Model used to vectorize chunks (fixed to nomic-embed-text — the index must stay in one embedding space)</li>
+                <li><strong>Chunk Size / Overlap:</strong> How documents are split for indexing</li>
+                <li><strong>Reranker:</strong> Optional cross-encoder re-scoring of retrieved chunks (only if Ollama exposes /api/rerank)</li>
+                <li><strong>Reasoning Mode:</strong> Asks the model to explain its thought process in the answer</li>
             </ul>
 
             <h3>Tips</h3>
@@ -377,18 +362,16 @@
 
             <h3>Infrastructure</h3>
             <ul>
-                <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
+                <li><strong>Host:</strong> Oracle Cloud VM (native systemd, no Docker)</li>
                 <li><strong>Tunnel:</strong> Cloudflare Tunnel v2</li>
                 <li><strong>Access:</strong> Cloudflare Access (identity-gated)</li>
-                <li><strong>Service:</strong> Python FastAPI + Uvicorn on port 9090</li>
                 <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
-                <li><strong>LLM:</strong> Ollama on port 11434 (qwen2.5:7b)</li>
-                <li><strong>Vector Store:</strong> SQLite + ChromaDB</li>
-                <li><strong>Embeddings:</strong> Local embedding model (via Ollama on AI service)</li>
-                <li><strong>Storage:</strong> local vault directory (rag_data)</li>
-                <li><strong>Chunking:</strong> Recursive text splitter (~500 tokens)</li>
+                <li><strong>LLM:</strong> Ollama on port 11434 (phi4-mini for RAG answers)</li>
+                <li><strong>Vector Store:</strong> SQLite (vectors.db) with normalized cosine search</li>
+                <li><strong>Embeddings:</strong> nomic-embed-text via Ollama</li>
+                <li><strong>Storage:</strong> local vault directory (/data/vault)</li>
+                <li><strong>Chunking:</strong> Paragraph-aware text splitter (~512 tokens)</li>
                 <li><strong>Knowledge Graph:</strong> Entity-relation graph for personal context</li>
-                <li><strong>Reasoning:</strong> Iterative self-verification with temperature annealing</li>
             </ul>
         </div>
     </div>
@@ -407,10 +390,6 @@
         }));
 
         const reasoningToggle = document.getElementById('reasoning-toggle');
-        const reasoningSettings = document.getElementById('reasoning-settings');
-        reasoningToggle.addEventListener('change', () => {
-            reasoningSettings.style.display = reasoningToggle.checked ? 'block' : 'none';
-        });
 
         function toggleHelp() {
             document.getElementById('help-overlay').classList.toggle('active');
@@ -460,10 +439,7 @@
                 const body = {
                     query: q,
                     reasoning_enabled: reasoningEnabled,
-                    max_iterations: reasoningEnabled ? parseInt(document.getElementById('max-iterations').value) : undefined,
-                    confidence_threshold: reasoningEnabled ? parseFloat(document.getElementById('confidence-threshold').value) : undefined,
                     top_k: parseInt(document.getElementById('top-k').value),
-                    include_history: true
                 };
                 const r = await fetch('/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
                 if (!r.ok) {
@@ -561,7 +537,7 @@
                     const data = await r.json();
                     const opts = data.data.map(m => `<option value="${m.id}">${m.id}</option>`).join('');
                     document.getElementById('model-select').innerHTML = opts;
-                    document.getElementById('embed-model').innerHTML = '<option value="nomic-embed-text">nomic-embed-text</option>' + opts;
+                    document.getElementById('embed-model').innerHTML = '<option value="nomic-embed-text">nomic-embed-text (fixed)</option>';
                     document.getElementById('reranker-model').innerHTML = '<option value="">None</option>' + opts;
                 }
             } catch { document.getElementById('model-select').innerHTML = '<option>phi4-mini</option>'; }
@@ -577,13 +553,10 @@
                     document.getElementById('chunk-size').value = cfg.chunk_size || 512;
                     document.getElementById('chunk-overlap').value = cfg.chunk_overlap || 64;
                     if (cfg.query_model) document.getElementById('model-select').value = cfg.query_model;
-                    if (cfg.embed_models && cfg.embed_models.length) document.getElementById('embed-model').value = cfg.embed_models[0];
+                    if (cfg.embed_models && cfg.embed_models.length) document.getElementById('embed-model').value = 'nomic-embed-text';
                     document.getElementById('reranker-toggle').checked = cfg.reranker_enabled || false;
                     if (cfg.reranker_model) document.getElementById('reranker-model').value = cfg.reranker_model;
                     document.getElementById('reasoning-toggle').checked = cfg.reasoning_enabled || false;
-                    document.getElementById('max-iterations').value = 3;
-                    document.getElementById('confidence-threshold').value = 0.7;
-                    if (cfg.reasoning_enabled) document.getElementById('reasoning-settings').style.display = '';
                 }
             } catch { /* defaults applied from HTML */ }
         }

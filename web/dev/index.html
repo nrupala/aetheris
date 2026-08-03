@@ -186,11 +186,11 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
       </div>
       <div>
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Query Model</label>
-        <input id="rag-query-model" type="text" value="qwen2.5:7b" style="width:100%;font-family:monospace;">
+        <input id="rag-query-model" type="text" value="phi4-mini" style="width:100%;font-family:monospace;">
       </div>
       <div style="grid-column:1/-1;">
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Embedding Models (ordered fallback, comma-separated)</label>
-        <input id="rag-embed-models" type="text" value="nomic-embed-text, phi-4-reasoning-plus-q4_k_m, qwen2.5:7b" style="width:100%;font-family:monospace;">
+        <input id="rag-embed-models" type="text" value="nomic-embed-text" style="width:100%;font-family:monospace;">
       </div>
       <div style="grid-column:1/-1;">
         <label style="color:#94a3b8;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Reranker Model</label>
@@ -201,7 +201,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
           <input id="rag-reasoning" type="checkbox"> Enable Reasoning
         </label>
         <label style="color:#94a3b8;font-size:0.8rem;display:flex;align-items:center;gap:0.5rem;">
-          <input id="rag-reranker-enabled" type="checkbox" checked> Enable Reranker
+          <input id="rag-reranker-enabled" type="checkbox"> Enable Reranker <span style="color:#64748b;">(requires Ollama with /api/rerank)</span>
         </label>
       </div>
     </div>
@@ -233,7 +233,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
         <input id="rag-test-reasoning" type="checkbox"> Reasoning
       </label>
       <label style="display:flex;align-items:center;gap:0.25rem;">
-        <input id="rag-test-reranker" type="checkbox" checked> Rerank
+        <input id="rag-test-reranker" type="checkbox"> Rerank
       </label>
       <button class="btn btn-primary" onclick="runRagTest()">Query</button>
     </div>
@@ -257,7 +257,7 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
     <div class="controls">
       <input id="embed-test-text" type="text" placeholder="Text to embed..." style="flex:1;">
       <button class="btn btn-secondary" onclick="testEmbedding('nomic-embed-text')">nomic-embed-text</button>
-      <button class="btn btn-secondary" onclick="testEmbedding('phi-4-reasoning-plus-q4_k_m')">Phi-4-Reasoning</button>
+      <button class="btn btn-secondary" onclick="testEmbedding('phi4-mini')">phi4-mini</button>
       <button class="btn btn-secondary" onclick="testEmbedding('qwen2.5:7b')">qwen2.5:7b</button>
     </div>
     <pre id="embed-test-result" style="margin-top:0.5rem;max-height:150px;">Click a model to test embedding.</pre>
@@ -376,9 +376,8 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
 
     <h3>Architecture</h3>
     <pre><code>Browser → Cloudflare Edge (Access) → Tunnel → Aetheris Core (:8080)
-  → Rust Core (:8080) — API gateway, agents, file ops
-    → Python Orchestrator (:9090) — RAG, KG, cross-system features (optional)
-      → Ollama (:11434) — Local LLM inference</code></pre>
+  → Rust Core (:8080) — API gateway, RAG + vector store, KG, agents, file ops
+    → Ollama (:11434) — Local LLM inference + embeddings (nomic-embed-text)</code></pre>
 
     <h3>Related Services</h3>
     <ul>
@@ -389,11 +388,11 @@ pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; pad
 
     <h3>Infrastructure</h3>
     <ul>
-      <li><strong>Host:</strong> Windows Desktop (WSL2 Docker)</li>
+      <li><strong>Host:</strong> Oracle Cloud VM (native systemd, no Docker)</li>
       <li><strong>Tunnel:</strong> Cloudflare Tunnel v2</li>
       <li><strong>Access:</strong> Cloudflare Access (identity-gated)</li>
       <li><strong>Runtime:</strong> Rust Axum web server on port 8080</li>
-      <li><strong>Orchestrator:</strong> Python FastAPI + Uvicorn on port 9090</li>
+      <li><strong>RAG:</strong> Native Rust vector store (SQLite) + nomic-embed-text embeddings</li>
       <li><strong>AI Runtime:</strong> Ollama API server on port 11434</li>
     </ul>
   </div>
@@ -583,11 +582,11 @@ async function loadRagConfig() {
     document.getElementById('rag-chunk-size').value = cfg.chunk_size || 512;
     document.getElementById('rag-chunk-overlap').value = cfg.chunk_overlap || 64;
     document.getElementById('rag-top-k').value = cfg.top_k || 5;
-    document.getElementById('rag-query-model').value = cfg.query_model || 'qwen3:8b';
-    document.getElementById('rag-embed-models').value = (cfg.embed_models || ['nomic-embed-text', 'qwen3:8b']).join(', ');
+    document.getElementById('rag-query-model').value = cfg.query_model || 'phi4-mini';
+    document.getElementById('rag-embed-models').value = (cfg.embed_models && cfg.embed_models.length ? cfg.embed_models : ['nomic-embed-text']).join(', ');
     document.getElementById('rag-reasoning').checked = cfg.reasoning_enabled || false;
     document.getElementById('rag-reranker-model').value = cfg.reranker_model || 'bge-reranker-v2-m3';
-    document.getElementById('rag-reranker-enabled').checked = cfg.reranker_enabled !== false;
+    document.getElementById('rag-reranker-enabled').checked = cfg.reranker_enabled === true;
     status.textContent = 'Loaded';
     status.style.color = '#22c55e';
   } catch (e) {
@@ -603,7 +602,7 @@ async function saveRagConfig() {
     chunk_size: parseInt(document.getElementById('rag-chunk-size').value) || 512,
     chunk_overlap: parseInt(document.getElementById('rag-chunk-overlap').value) || 64,
     top_k: parseInt(document.getElementById('rag-top-k').value) || 5,
-    query_model: document.getElementById('rag-query-model').value || 'qwen3:8b',
+    query_model: document.getElementById('rag-query-model').value || 'phi4-mini',
     embed_models: document.getElementById('rag-embed-models').value.split(',').map(s => s.trim()).filter(Boolean),
     reasoning_enabled: document.getElementById('rag-reasoning').checked,
     reranker_model: document.getElementById('rag-reranker-model').value || 'bge-reranker-v2-m3',

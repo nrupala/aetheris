@@ -1,5 +1,7 @@
 # Deployment Guide
 
+> **⚠️ This guide documents the legacy Docker/Compose topology (Nginx, RAG on 8081, code-server on 8443, ChromaDB).** The **current production deployment is native systemd without Docker** — install with `sudo scripts/install-native.sh` (service `aetheris-core :8080` + `ollama :11434`, RAG/KG/vector store all inside the Rust core). Ports/database paths in the Docker sections below no longer apply to the running stack.
+
 ## Overview
 
 This guide covers deploying the Aetheris **RAG / LLMVM subsystem** in production, development, and local environments.

@@ -196,6 +196,7 @@ impl ModelBridge for OllamaBridge {
         prompt: &str,
         model: &str,
         timeout_secs: u64,
+        max_tokens: Option<u32>,
     ) -> Result<String, String> {
         let model = if model.is_empty() {
             &self.default_model
@@ -203,7 +204,7 @@ impl ModelBridge for OllamaBridge {
             model
         };
         let timeout = std::time::Duration::from_secs(timeout_secs);
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "model": model,
             "messages": [{
                 "role": "user",
@@ -212,6 +213,9 @@ impl ModelBridge for OllamaBridge {
             "temperature": 0.1,
             "stream": false
         });
+        if let Some(max_tokens) = max_tokens {
+            payload["max_tokens"] = serde_json::json!(max_tokens);
+        }
         let res = crate::util::http_client_with_timeout(timeout)
             .post(format!("{}/v1/chat/completions", self.url))
             .json(&payload)

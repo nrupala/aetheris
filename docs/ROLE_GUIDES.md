@@ -20,7 +20,7 @@ Guides organized by persona, following the AppDocStudio role-based documentation
 
 ### Common Tasks
 
-**Chat with AI:** Open `https://ai.nrupalakolkar.com`, sign in via Cloudflare Access, type your question. The UI uses the `qwen2.5:7b` model.
+**Chat with AI:** Open `https://ai.nrupalakolkar.com`, sign in via Cloudflare Access, type your question. The UI uses the `phi4-mini` / `qwen3:8b` models.
 
 **Query documents:** Open `https://rag.nrupalakolkar.com`, upload documents in the Documents tab, then ask questions in the Ask tab.
 
@@ -31,7 +31,7 @@ Guides organized by persona, following the AppDocStudio role-based documentation
 ### Tips
 - All four hostnames are gated by the same Cloudflare Access application
 - AI chat maintains conversation history automatically
-- RAG supports PDF, TXT, MD, HTML, JSON, CSV files (50MB max)
+- RAG supports PDF, TXT, MD, HTML, JSON, CSV, and code files (50MB max)
 - Agent workflows show step-by-step execution with duration
 - The Dev Sandbox shows live system logs and service metrics
 
@@ -170,7 +170,7 @@ cp -r /etc/aetheris/ ./backups/config/
 2. **OPA policies:** Review `default deny` enforcement and role definitions
 3. **Access logs:** Cloudflare Access logs capture every authenticated request with identity
 4. **File integrity:** ZFS snapshots provide point-in-time evidence
-5. **Data retention:** RAG pipeline auto-cleans temporary files (1h-7d TTL)
+5. **Data retention:** Uploaded source files persist in the vault; the audit WAL under `/data/vault/wal` is the retention record
 6. **Emergency protocol:** Kill switch procedure documented and tested
 
 ### Compliance Checklist
@@ -233,14 +233,11 @@ OPA policies are in `core/policies/`. To modify:
 ### Service Architecture
 ```
 Native systemd services (127.0.0.1 loopback):
-├── aetheris-core (:8080)   — Rust Axum API gateway
+├── aetheris-core (:8080)   — Rust Axum API gateway + RAG pipeline + vector store
 ├── cloudflared             — Cloudflare Tunnel + Access (edge TLS/auth)
-├── ollama (:11434)         — LLM inference (qwen2.5:7b)
-├── orchestrator (:9090)    — RAG pipeline, KG (optional, LLMVM profile)
-├── chroma                  — Vector database (optional)
-├── opa (:8181)             — Policy engine (optional)
-└── victoria-metrics (:8428)  — Metrics (optional)
+└── ollama (:11434)         — LLM inference (phi4-mini, qwen3:8b) + embeddings (nomic-embed-text)
 ```
+RAG and the knowledge graph run inside `aetheris-core` (SQLite in `/data/vault`) — no separate RAG service, Chroma, or Python orchestrator is required on the native deploy.
 
 ### Routine Maintenance
 ```bash
@@ -255,7 +252,7 @@ git pull && sudo scripts/install-native.sh
 ```
 
 ### Scaling Considerations
-- **Memory:** qwen2.5:7b requires ~5GB RAM for the model alone
+- **Memory:** qwen3:8b requires ~8GB RAM; phi4-mini ~3GB. The box has 24GB total (see `/api/health` → `total_memory_mb`)
 - **Storage:** RAG data grows with uploaded documents; monitor the `/data/vault` directory
 - **Concurrency:** Axum handles concurrent requests efficiently; monitor WAL write throughput
 - **Network:** Cloudflare Tunnel handles up to 100Mbps; upgrade plan for higher throughput
