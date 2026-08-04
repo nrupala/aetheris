@@ -540,7 +540,6 @@ mod tests {
                     action,
                     "read" | "query" | "query_kg" | "list_agents" | "coordinate"
                 ),
-                "analyst" => matches!(action, "query" | "read" | "query_kg" | "list_sources"),
                 _ => false,
             };
             Json(serde_json::json!({ "result": allowed }))
