@@ -35,10 +35,3 @@ allow if {
     input.role == "planner"
     input.action in {"read", "query", "query_kg", "list_agents", "coordinate"}
 }
-
-# analyst has no AgentRole in agents/mod.rs today; allowlist is provisional,
-# mirroring a read-only set drawn from the framework's existing action strings.
-allow if {
-    input.role == "analyst"
-    input.action in {"query", "read", "query_kg", "list_sources"}
-}
