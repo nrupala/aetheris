@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly Cloudflare Access JWKS refresh
+
+[Timer]
+OnBootSec=5min
+OnCalendar=hourly
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

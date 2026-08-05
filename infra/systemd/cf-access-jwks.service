@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh Cloudflare Access JWKS (keeps last-good on failure)
+# Reads CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_JWKS_PATH if present, else defaults.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/aetheris/scripts/refresh-cf-jwks.sh
