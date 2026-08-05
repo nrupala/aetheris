@@ -12,6 +12,10 @@ pub struct Config {
     pub fallback_model: String,
     pub embed_fallback_model: String,
     pub web_root: PathBuf,
+    pub cf_access_team_domain: String,
+    pub cf_access_aud: Vec<String>,
+    pub cf_access_jwks_path: PathBuf,
+    pub cf_jwt_verify: bool,
 }
 
 impl Config {
@@ -37,6 +41,21 @@ impl Config {
             embed_fallback_model: std::env::var("AETHERIS_EMBED_FALLBACK_MODEL")
                 .unwrap_or_else(|_| "nomic-embed-text".to_string()),
             web_root: Self::path_from_env("WEB_ROOT", "/opt/aetheris/web"),
+            cf_access_team_domain: std::env::var("CF_ACCESS_TEAM_DOMAIN")
+                .unwrap_or_else(|_| "https://nrupal.cloudflareaccess.com".to_string()),
+            cf_access_aud: std::env::var("CF_ACCESS_AUD")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_string())
+                .collect(),
+            cf_access_jwks_path: Self::path_from_env(
+                "CF_ACCESS_JWKS_PATH",
+                "/etc/aetheris/cf_access_jwks.json",
+            ),
+            cf_jwt_verify: std::env::var("CF_JWT_VERIFY")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         }
     }
 
