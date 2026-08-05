@@ -165,7 +165,7 @@ RUST_LOG=debug cargo test
 - **Post-flip soak (24h+, to `2026-08-05T08:19Z`):** `2163` OPA decisions, **`0` would-deny**, **`0` admin-identity denies**, **`0` agent would-denies**. Panel/admin browsing, health GETs, and agent runs **all allow**; the middleware is confirmed firing on every route.
 - **Rollback:** set `OPA_ENFORCE=0` in `/etc/aetheris/core.env` + `systemctl restart aetheris-core` (instant, no rebuild).
 - **Scope:** gates the method-aware `is_sensitive` set (mutating verbs + secret/log/file reads); non-sensitive GETs stay open. Core binds `127.0.0.1:8080`; only the cloudflared tunnel reaches it.
-- **Identity today** = plaintext `Cf-Access-Authenticated-User-Email` header (safe only via loopback+iptables). Hardening tracked in `docs/OPA_P5_JWT_PLAN.md` (verify signed `Cf-Access-Jwt-Assertion`; flag `CF_JWT_VERIFY`, default off).
+- **Identity today** = plaintext `Cf-Access-Authenticated-User-Email` header (safe only via loopback+iptables). Hardening tracked in `docs/OPA_P5_JWT_PLAN.md` (verify signed `Cf-Access-Jwt-Assertion`; flag `CF_JWT_VERIFY`, default **off**). **P5.2 shadow**: `verify_assertion` (`src/auth/cf_jwt.rs`, RS256 via `jsonwebtoken`+`rust_crypto`, pinned JWKS) runs on `is_sensitive` routes and logs only — identity still from header, blocks nothing. JWKS refreshed hourly (`cf-access-jwks.timer`, keep last-good).
 - **Known-expected 403:** `infra/tests/smoke_health.sh` `POST /bridge/ai/embed` (header-less write). Mint a scoped CF-Access service token only if write-route smoke tests must run.
 - **DO NOT silently flip `OPA_ENFORCE` off** — intentional live control. Only the operator (Milo) authorizes a change.
 
