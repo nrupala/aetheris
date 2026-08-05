@@ -13,6 +13,7 @@ use tower_http::services::ServeDir;
 
 mod a2a;
 mod agents;
+mod auth;
 mod bridge;
 mod config;
 mod connector;
@@ -53,6 +54,7 @@ pub struct AppState {
     pub ai_url: String,
     pub opa_url: String,
     pub opa_enforce: bool,
+    pub cf_jwt: auth::cf_jwt::CfJwtConfig,
     pub port_registry: serde_json::Value,
     pub dev_logs: Mutex<Vec<LogEntry>>,
     pub wal: Arc<Mutex<wal::WriteAheadLog>>,
@@ -1910,6 +1912,33 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
 
     let method = req.method().as_str().to_string();
     let path = req.uri().path().to_string();
+
+    // SHADOW-only CF Access JWT verification on sensitive routes (P5, CF_JWT_VERIFY=0).
+    // Observe + log; identity still comes from the plaintext header; nothing blocked.
+    // eprintln! so the observations surface in journalctl -u aetheris-core (the app
+    // installs logging via tracing, not the `log` facade).
+    if is_sensitive(&method, &path) {
+        match auth::cf_jwt::verify_assertion(headers, &state.cf_jwt) {
+            Ok(identity) => {
+                if !identity.email.is_empty() && !email.is_empty() && identity.email != email {
+                    eprintln!(
+                        "CFJWT shadow: header-email mismatch {} != {} on {} {}",
+                        email, identity.email, method, path
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "CFJWT shadow: verify failed on {} {} ({}): {}",
+                    method,
+                    path,
+                    if email.is_empty() { "<none>" } else { &email },
+                    e
+                );
+            }
+        }
+    }
+
     let input = bridge::AuthzInput {
         identity: email.clone(),
         role: access_role(&email, client_id.as_deref()).to_string(),
@@ -2107,6 +2136,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ai_url,
         opa_url,
         opa_enforce: cfg.opa_enforce,
+        cf_jwt: auth::cf_jwt::CfJwtConfig {
+            team_domain: cfg.cf_access_team_domain.clone(),
+            aud: cfg.cf_access_aud.iter().cloned().collect(),
+            jwks_path: cfg.cf_access_jwks_path.clone(),
+            enabled: cfg.cf_jwt_verify,
+        },
         default_model: ai_model,
         port_registry,
         wal: wal_arc.clone(),
@@ -2382,6 +2417,12 @@ mod tests {
             ai_url: ai_url.clone(),
             opa_url,
             opa_enforce,
+            cf_jwt: auth::cf_jwt::CfJwtConfig {
+                team_domain: "https://nrupal.cloudflareaccess.com".to_string(),
+                aud: std::collections::HashSet::new(),
+                jwks_path: std::env::temp_dir().join("missing_jwks.json"),
+                enabled: false,
+            },
             port_registry: serde_json::json!({}),
             dev_logs: Mutex::new(Vec::new()),
             wal: wal_arc,

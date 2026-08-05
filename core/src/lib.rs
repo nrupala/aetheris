@@ -1,5 +1,6 @@
 pub mod a2a;
 pub mod agents;
+pub mod auth;
 pub mod bridge;
 pub mod config;
 pub mod connector;

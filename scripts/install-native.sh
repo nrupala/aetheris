@@ -117,6 +117,22 @@ log "Reloading systemd and enabling opa"
 systemctl daemon-reload
 systemctl enable --now opa.service
 
+# --- 5c. CF Access JWKS (P5 shadow; hourly refresh, keep last-good) ---
+TEAM_DOMAIN="${CF_ACCESS_TEAM_DOMAIN:-https://nrupal.cloudflareaccess.com}"
+CF_JWKS_PATH="${CF_ACCESS_JWKS_PATH:-/etc/aetheris/cf_access_jwks.json}"
+log "Fetching CF Access JWKS to ${CF_JWKS_PATH}"
+install -d -m 0755 "$(dirname "${CF_JWKS_PATH}")"
+if curl -fsSL "${TEAM_DOMAIN}/cdn-cgi/access/certs" -o "${CF_JWKS_PATH}"; then
+  chmod 0644 "${CF_JWKS_PATH}"
+else
+  log "WARN: could not fetch CF Access JWKS now; hourly refresh (keep last-good) will retry"
+fi
+install -m 0644 "${REPO_ROOT}/infra/systemd/cf-access-jwks.service" "/etc/systemd/system/cf-access-jwks.service"
+install -m 0644 "${REPO_ROOT}/infra/systemd/cf-access-jwks.timer" "/etc/systemd/system/cf-access-jwks.timer"
+log "Enabling cf-access-jwks.timer (hourly)"
+systemctl daemon-reload
+systemctl enable --now cf-access-jwks.timer
+
 # --- 6. systemd unit ---
 log "Installing systemd unit to ${UNIT_DST}"
 install -m 0644 "${REPO_ROOT}/infra/systemd/aetheris-core.service" "${UNIT_DST}"
