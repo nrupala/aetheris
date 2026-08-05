@@ -160,6 +160,15 @@ RUST_LOG=debug cargo test
 
 ## Build Status
 
+### Security posture — OPA authorization (LIVE)
+- **`OPA_ENFORCE=1` in `/etc/aetheris/core.env`** — enforcement **LIVE** since `2026-08-04 02:48 UTC` (verified: core.env mtime = last core restart). A single flag governs **both** the HTTP `opa_gate` middleware **and** agent `check_policy`.
+- **Post-flip soak (24h+, to `2026-08-05T08:19Z`):** `2163` OPA decisions, **`0` would-deny**, **`0` admin-identity denies**, **`0` agent would-denies**. Panel/admin browsing, health GETs, and agent runs **all allow**; the middleware is confirmed firing on every route.
+- **Rollback:** set `OPA_ENFORCE=0` in `/etc/aetheris/core.env` + `systemctl restart aetheris-core` (instant, no rebuild).
+- **Scope:** gates the method-aware `is_sensitive` set (mutating verbs + secret/log/file reads); non-sensitive GETs stay open. Core binds `127.0.0.1:8080`; only the cloudflared tunnel reaches it.
+- **Identity today** = plaintext `Cf-Access-Authenticated-User-Email` header (safe only via loopback+iptables). Hardening tracked in `docs/OPA_P5_JWT_PLAN.md` (verify signed `Cf-Access-Jwt-Assertion`; flag `CF_JWT_VERIFY`, default off).
+- **Known-expected 403:** `infra/tests/smoke_health.sh` `POST /bridge/ai/embed` (header-less write). Mint a scoped CF-Access service token only if write-route smoke tests must run.
+- **DO NOT silently flip `OPA_ENFORCE` off** — intentional live control. Only the operator (Milo) authorizes a change.
+
 ### Completed
 - **Core compilation** ✅ — `cargo check` passes with zero errors
 - **`workflow_run_handler` fix** ✅ — `std::sync::MutexGuard` was held across `.await`, making future non-`Send`. Fixed by extracting agent from lock, dropping guard, awaiting, then re-acquiring.
@@ -207,7 +216,7 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request, next: Next) 
     next.run(req).await
 }
 ```
-Prereqs in place (all built): `AppState.opa_enforce` (P2), `identity_to_role`/`AuthzInput` (P1), `is_sensitive(method, path)` + `access_role` + `opa_gate` (P3). Enforcement stays off (`opa_enforce` false) — to enable enforcement, flip `OPA_ENFORCE=1` and review `is_sensitive` scope.
+Prereqs in place (all built): `AppState.opa_enforce` (P2), `identity_to_role`/`AuthzInput` (P1), `is_sensitive(method, path)` + `access_role` + `opa_gate` (P3). **Enforcement is LIVE** (`OPA_ENFORCE=1`, see "Security posture — OPA authorization (LIVE)" above); rollback = `OPA_ENFORCE=0` + restart.
 
 ### In Progress
 - **WAL-backed dev logs** — logs endpoint initialized but not dynamically appended
