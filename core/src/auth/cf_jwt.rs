@@ -161,69 +161,63 @@ pub fn verify_assertion(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{Algorithm, EncodingKey, Header};
+    use base64::Engine;
+    use jsonwebtoken::EncodingKey;
+    use rsa::traits::PublicKeyParts;
     use std::collections::HashSet;
     use std::fs;
 
-    // Test RSA key `kid=p5test`; private key signs tokens, public n/e go into a temp
-    // JWKS file written by each test.
     const KID: &str = "p5test";
-    const RSA_N: &str = "hHNlY41eLuZQLAiVBadSiOBf2j0LmtMezIAMCN05-9tQ0y9w6q-bwd2znboBBFheKTuB6pQSXvtV473OmrS0IKi2nJpFYcMZXdplbz9EZsx65UqZcrahwS4SwBuJ9AIdkB1Vboqa5Mv-B6qOeBxyg3TU0ynbZ639uvD8ZkGPOAOf4Rs6lPPaa8X-z0umULYpKTGjsr7MnSXXRcZdZGuedxDFQqcUiTGIcjB8etgyulu1jzgqfdwmGdWbrm6OT6GdKFaYSRx2qvRQJFFfTAAcZRiYM6eqNyPqPZ7cmJLuns3_oZt9PlgOvfhuIBS1uUmoKJULnhzG0zmKd0yxIkq_cw";
-    const RSA_E: &str = "AQAB";
-    const PRIV_PEM: &str = r#"-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCEc2VjjV4u5lAs
-CJUFp1KI4F/aPQua0x7MgAwI3Tn721DTL3Dqr5vB3bOdugEEWF4pO4HqlBJe+1Xj
-vc6atLQgqLacmkVhwxld2mVvP0RmzHrlSplytqHBLhLAG4n0Ah2QHVVuiprky/4H
-qo54HHKDdNTTKdtnrf268PxmQY84A5/hGzqU89prxf7PS6ZQtikpMaOyvsydJddF
-xl1ka553EMVCpxSJMYhyMHx62DK6W7WPOCp93CYZ1Zuubo5PoZ0oVphJHHaq9FAk
-UV9MABxlGJgzp6o3I+o9ntyYku6ezf+hm30+WA69+G4gFLW5SagolQueHMbTOYp3
-TLEiSr9zAgMBAAECggEAEkG7vHysekd5zpACRoy5Ri+zVqgqdNVb/fE6d3BTAUHK
-QsnbxSWekRrnmrqcUEaD+CgBMN3nKFt5i9JKa62z1Hqc7TogjSiw0ux7JdnxKkBO
-QlPFkffVlQSuRfelzNIL1CUO9RU644Wwxsq+J5U4PaF5gn/XA9QKUN3N1KR9wske
-WIPTpDvsVezec+fcHtxCDQovq49xm2UyPXhz5q2sT3KQOGEwt0egCwHR8b4ZWieC
-4G0UM5rD56ywLhu22A8j50vVZh+qR/cDP8p09UJKcXJJDYvCVYQ9vctb+7mzyFTr
-gtFWJ9u6jNfazJwIjTdWSIHsox1kgrLXAcYYWt6uhQKBgQC6euJ8hhqm4kCZn7r+
-urNZD1qJS4RIjsyY8uvjTcvsTMHnOfE6IDsAmXnHHb01P0JDjoWBp0JMNMqNsfPz
-m4jotaaZIIFOuiNgyi4lwrN0a6oj/9VOv4msDZs8Vz3TIenuneEdE+M9oje5GgWi
-WNN0ZS2JswP6Aunv6HJFrwlQxQKBgQC11B2BFcLlhjpbbe4k5QYA6AceGDAf96eY
-yoJcTOetX2BZAzcTfEtwb0+R93AspNUXQ13WX7EPfEHaJVjBOPp0P3VF2fMQ8J+l
-v0mlND9GQUAFQpsV5sKMO2dQiQn3ZbCQmp+Gdd6b1+I2wqxv95/5Te72sBvFp9Gd
-+DqOViLi1wKBgGAcyfMIY2A0KLuFOinkLF/wq+crhuimwQjr22xyQnJuNVpp4Mzm
-o8JxV/SqfUSecBbFtEXY4TDJ3MQfPe8G8Q+P4Gf3+u2KvoU6b4KC0V9lxnF7gINv
-8RM+iA4XoQPa7OlRch88itjPbQz4PoMoaQQKyee43onTSqOeGJeV2aVJAoGBAJHH
-vt//0oKzW5ZyTLzH4khXv10hh3QZ2wVlV58pCZa3IUg8i6vTu6gplmIxQH6KqU49
-dL6regowVZvQ1ZgVVrhdKGkYlQi/4z/AXgtWGGT7a5jMDgtBODm2Zt7rAFKZ9TX6
-wmvLlO7d50CAVEBxCJGZKj4edCXEpwtAObJk3ROBAoGBAKZ/rjc4+q+nHgfByCK7
-TidotvK+qYhEoiw3lznV9IwODZJYgIpn+y/q0xP/kch1OkPmIN57SjBodUf/Jv3G
-kLPNsPrriKEpJDFVhahh0emQ+ZWA2NwRG4ketBGvci57BUrFeUpCN68tgDic3r24
-rLTURVdg0VsYam7IXDSRDm4Y
------END PRIVATE KEY-----"#;
-
     const TEAM: &str = "https://nrupal.cloudflareaccess.com";
 
-    fn cfg() -> CfJwtConfig {
-        let mut aud = HashSet::new();
-        aud.insert("aud-x".to_string());
+    fn b64url(data: &[u8]) -> String {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data)
+    }
+
+    // Generate a fresh RSA keypair + JWKS at runtime (never embed a private key in
+    // source). Shared by the verifier's JWKS and the token issuer's signing key.
+    struct TestEnv {
+        cfg: CfJwtConfig,
+        enc: EncodingKey,
+    }
+
+    fn setup() -> TestEnv {
+        let mut rng = rand::thread_rng();
+        let private = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let public = private.to_public_key();
+        let n = public.n().to_bytes_be();
+        let e = public.e().to_bytes_be();
+        let jwks = serde_json::json!({
+            "keys": [{
+                "kty": "RSA", "use": "sig", "alg": "RS256", "kid": KID,
+                "n": b64url(&n), "e": b64url(&e)
+            }]
+        });
         let dir = std::env::temp_dir().join(format!("p5test{}", std::process::id()));
         fs::create_dir_all(&dir).ok();
         let jwks_path = dir.join("jwks.json");
-        let jwks = format!(
-            r#"{{"keys":[{{"kty":"RSA","use":"sig","alg":"RS256","kid":"{KID}","n":"{RSA_N}","e":"{RSA_E}"}}]}}"#
-        );
-        fs::write(&jwks_path, jwks).ok();
-        CfJwtConfig {
+        fs::write(&jwks_path, jwks.to_string()).ok();
+
+        let pem = rsa::pkcs8::EncodePrivateKey::to_pkcs8_pem(&private, rsa::pkcs8::LineEnding::LF)
+            .unwrap()
+            .to_string();
+        let enc = EncodingKey::from_rsa_pem(pem.as_bytes()).unwrap();
+
+        let mut aud = HashSet::new();
+        aud.insert("aud-x".to_string());
+        let cfg = CfJwtConfig {
             team_domain: TEAM.to_string(),
             aud,
             jwks_path,
             enabled: true,
-        }
+        };
+        TestEnv { cfg, enc }
     }
 
-    fn sign(claims: serde_json::Value) -> String {
-        let key = EncodingKey::from_rsa_pem(PRIV_PEM.as_bytes()).unwrap();
-        let mut header = Header::new(Algorithm::RS256);
+    fn sign(env: &TestEnv, claims: serde_json::Value) -> String {
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
         header.kid = Some(KID.to_string());
-        jsonwebtoken::encode(&header, &claims, &key).unwrap()
+        jsonwebtoken::encode(&header, &claims, &env.enc).unwrap()
     }
 
     fn headers(token: Option<&str>) -> HeaderMap {
@@ -248,18 +242,18 @@ rLTURVdg0VsYam7IXDSRDm4Y
 
     #[test]
     fn valid_assertion_yields_identity() {
-        let c = cfg();
-        let h = headers(Some(&sign(valid_claims(3600))));
-        let id = verify_assertion(&h, &c).unwrap_or_else(|e| panic!("valid token rejected: {e:?}"));
+        let env = setup();
+        let h = headers(Some(&sign(&env, valid_claims(3600))));
+        let id = verify_assertion(&h, &env.cfg)
+            .unwrap_or_else(|e| panic!("valid token rejected: {e:?}"));
         assert_eq!(id.email, "admin@example.com");
         assert_eq!(id.sub, "user-123");
     }
 
     #[test]
     fn bad_signature_errors() {
-        let c = cfg();
-        let mut token = sign(valid_claims(3600));
-        // tamper the last char of the signature
+        let env = setup();
+        let mut token = sign(&env, valid_claims(3600));
         let len = token.len();
         let replacement = if token.bytes().last() == Some(b'a') {
             "b"
@@ -268,46 +262,52 @@ rLTURVdg0VsYam7IXDSRDm4Y
         };
         token.replace_range(len - 1.., replacement);
         let h = headers(Some(&token));
-        assert!(matches!(verify_assertion(&h, &c), Err(JwtError::Decode(_))));
+        assert!(matches!(
+            verify_assertion(&h, &env.cfg),
+            Err(JwtError::Decode(_))
+        ));
     }
 
     #[test]
     fn wrong_audience_errors() {
-        let c = cfg();
+        let env = setup();
         let mut claims = valid_claims(3600);
         claims["aud"] = serde_json::json!("aud-other");
-        let h = headers(Some(&sign(claims)));
+        let h = headers(Some(&sign(&env, claims)));
         assert!(matches!(
-            verify_assertion(&h, &c),
+            verify_assertion(&h, &env.cfg),
             Err(JwtError::InvalidAudience)
         ));
     }
 
     #[test]
     fn expired_errors() {
-        let c = cfg();
-        let h = headers(Some(&sign(valid_claims(-7200))));
-        assert!(matches!(verify_assertion(&h, &c), Err(JwtError::Expired)));
+        let env = setup();
+        let h = headers(Some(&sign(&env, valid_claims(-7200))));
+        assert!(matches!(
+            verify_assertion(&h, &env.cfg),
+            Err(JwtError::Expired)
+        ));
     }
 
     #[test]
     fn wrong_issuer_errors() {
-        let c = cfg();
+        let env = setup();
         let mut claims = valid_claims(3600);
         claims["iss"] = serde_json::json!("https://evil.example.com");
-        let h = headers(Some(&sign(claims)));
+        let h = headers(Some(&sign(&env, claims)));
         assert!(matches!(
-            verify_assertion(&h, &c),
+            verify_assertion(&h, &env.cfg),
             Err(JwtError::InvalidIssuer)
         ));
     }
 
     #[test]
     fn missing_assertion_errors() {
-        let c = cfg();
+        let env = setup();
         let h = headers(None);
         assert!(matches!(
-            verify_assertion(&h, &c),
+            verify_assertion(&h, &env.cfg),
             Err(JwtError::MissingAssertion)
         ));
     }
