@@ -1,50 +1,71 @@
-# OPA P5 — JWT Identity Verification (HARDENING PLAN, not yet enabled)
+# OPA P5 — JWT Identity Verification (SHADOW phase in progress; NOT enforced)
 
-> Status: **Planned**. Today's OPA identity is a plaintext `Cf-Access-Authenticated-User-Email`
-> header injected by Cloudflare Access. That is only safe because the core binds
-> `127.0.0.1:8080` (loopback) and iptables refuses external NEW connections to 8080 —
-> so the only ingress is the cloudflared tunnel, which fronts CF-Access-protected hosts.
-> This forwards a *signed* `Cf-Access-Jwt-Assertion` token that we currently ignore.
+> Status: **Shadow build (P5.2)**. Today's OPA identity is a plaintext
+> `Cf-Access-Authenticated-User-Email` header injected by Cloudflare Access. Safe only
+> because core binds `127.0.0.1:8080` (loopback) and iptables refuses external NEW to 8080.
+> P5 adds verification of the *signed* `Cf-Access-Jwt-Assertion` — shadow-only first
+> (log mismatches, block nothing), then opt-in enforcement via a new flag.
+
+## §0 — Resolved values (locked)
+- **Team / issuer:** `https://nrupal.cloudflareaccess.com`
+- **JWKS:** `https://nrupal.cloudflareaccess.com/cdn-cgi/access/certs` → fetched to
+  `/etc/aetheris/cf_access_jwks.json` (0644); hourly systemd timer refresh, keep last-good on failure.
+- **Signing algorithm:** RS256 (`jsonwebtoken` crate).
+- **`CF_ACCESS_AUD`** (comma-list of the Access Application AUDs whose hostnames route to
+  **core `127.0.0.1:8080`** — ai/dev/rag/oracle; **EXCLUDE agents+mgmt** which are separate Python services):
+  ```
+  ai    = 03bbed24857c478bab5404901b443308631d881bc5fd68fa1894ca2b1df3e756
+  dev   = 358ec69acf19657a591085df7f5382915491746df9afbe8328d3e02e0974a717
+  rag   = c142cabc3ce3ff0938508da8974a523af5919888d19407201bc5f4b18e808651
+  oracle= 7d0506af81682ff17518a336c443415ae37e3f8a99f98e3df53d592217b2ca03
+  ```
+- **Flags (in `/etc/aetheris/core.env`):**
+  ```
+  CF_ACCESS_TEAM_DOMAIN=nrupal.cloudflareaccess.com
+  CF_ACCESS_AUD=<comma-list above>
+  CF_ACCESS_JWKS_PATH=/etc/aetheris/cf_access_jwks.json
+  CF_JWT_VERIFY=0        # default OFF (shadow). Rollback = set 0 + restart.
+  ```
 
 ## Problem
-Relying on the plaintext email header means header-trust depends on the loopback+iptables
-boundary staying intact. Anyone who can reach core directly (or misroutes) could spoof
-`Cf-Access-Authenticated-User-Email: nrupalakolkar@gmail.com` → `admin`.
+Plaintext-email header-trust depends on the loopback+iptables boundary holding. Anyone
+who reaches core directly could spoof `Cf-Access-Authenticated-User-Email` → `admin`.
 
-## Goal — verify the signed assertion
-- Accept the plaintext email header today (backward compatible), but when hardened, verify
-  the signed `Cf-Access-Jwt-Assertion` before trusting the identity.
-- CF Access validates the JWT (HS256 keyed by your Access Application AUD + the account's
-  `teamdomain`/cert), with a short expiry + nonce. On verify success, extract the `email`
-  claim as the authoritative identity.
+## Goal — verify the signed assertion (shadow → opt-in enforce)
+- Verify the signed `Cf-Access-Jwt-Assertion` (RS256, pinned JWKS, `iss`, `aud ∈ CF_ACCESS_AUD`,
+  `exp`/`iat` with small leeway). On success, the `email` claim is the authoritative identity.
+- **Shadow (CF_JWT_VERIFY=0):** on sensitive routes, verify and LOG header-email vs jwt-email
+  mismatches + verify failures. **Identity still comes from the plaintext header. Block nothing.**
+- **Enforce (CF_JWT_VERIFY=1, a later flip):** only a verified JWT (email == owner) maps to
+  `admin`; unverifiable/spoofed → `unknown`, denied on sensitive routes.
 
 ## Design
-- New env flag **`CF_JWT_VERIFY`**, default **off** (matching today's behavior).
-- When on, `access_role(email, client_id)` path in `opa_gate` verifies the
-  `Cf-Access-Jwt-Assertion` first; only a verified JWT whose `email` claim equals
-  `nrupalakolkar@gmail.com` maps to `admin`. Unverifiable assertions → `unknown` (deny on
-  sensitive routes) rather than trusting the plaintext header.
-- Keep the plaintext header as a fast-path fallback ONLY while `CF_JWT_VERIFY=off`.
+- New crate: `jsonwebtoken` (RS256).
+- New module `src/auth/cf_jwt.rs`: `verify_assertion(headers) -> Result<VerifiedIdentity{email, sub}, JwtError>`
+  — read `Cf-Access-Jwt-Assertion`; decode header → `kid`; match against pinned JWKS
+  (loaded from `CF_ACCESS_JWKS_PATH`); verify RS256 signature; validate
+  `iss=https://nrupal.cloudflareaccess.com`, `aud ∈ CF_ACCESS_AUD`, `exp`/`iat` leeway.
+- Config: flags above read in `Config::from_env` (mirroring OPA_ENFORCE pattern).
+- Bootstrap: on install, `curl` JWKS → `CF_ACCESS_JWKS_PATH` (0644); new hourly systemd
+  timer to refresh, keeping last-good on fetch failure.
+- Wire into `opa_gate` **shadow only**: on `is_sensitive(method, path)` (the PR#14
+  method-aware helper) call `verify_assertion`; log:
+  - verify failure (bad sig / wrong aud / expired / missing on sensitive),
+  - header-email vs jwt-email mismatch.
+  Identity used by OPA remains the plaintext header. **No blocking.**
 
-## JWT verification details (CF Access)
-- Headers (typical): `Cf-Access-Jwt-Assertion`, `Cf-Access-Client-Id`,
-  `Cf-Access-Client-Secret` (service tokens), `Cf-Access-Authenticated-User-Email`.
-- Key: the JWT is signed with the applied-to Application's AUD secret. Must not be confused
-  with the origin security secret; use a verified copy obtained via the Cloudflare
-  dashboard (`Team → Applications → <app> → Keys`).
-- Claims: `aud` == the Access application AUD; `email` == the authenticated user; `exp`
-  within a short window; reject on any mismatch/expiry.
+## Acceptance
+- Valid JWT → `VerifiedIdentity{email, sub}`.
+- Bad signature → Err; wrong `aud` → Err; expired → Err; missing-on-sensitive → shadow
+  log-only; missing-on-nonsensitive → ignored (no log, no work).
 
-## Acceptance (when implemented)
-- With `CF_JWT_VERIFY=1`: valid JWT `(aud, exp, email=nrupalakolkar@gmail.com)` → `admin`, allow.
-- Forged / expired / wrong-aud JWT → `unknown`, denied on sensitive routes.
-- Malformed header → `unknown`, never `admin`.
-- Plaintext-email spoof (no valid JWT) → `unknown`, denied on sensitive routes (closes the
-  spoof gap).
-
-## Rollback
-- `CF_JWT_VERIFY=0` (or unset) restores today's header-trust behavior. No rebuild.
+## Rollback / flip
+- **Flip enforce:** `CF_JWT_VERIFY=1` + `systemctl restart aetheris-core` (independent of
+  `OPA_ENFORCE`).
+- **Rollback:** `CF_JWT_VERIFY=0` + restart. No rebuild.
 
 ## References
 - `AGENTS.md` → "Security posture — OPA authorization (LIVE)".
-- `core/src/main.rs` → `opa_gate`, `access_role`, `identity_to_role`.
+- `core/src/main.rs` → `opa_gate`, `access_role`, `is_sensitive`.
+- Ingress evidence note: cloudflared tunnel is token/dashboard-managed (no on-box ingress
+  file); `CF_ACCESS_AUD` set above follows ai/dev/rag/oracle → core, agents/mgmt → Python.
