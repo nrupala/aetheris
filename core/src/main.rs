@@ -1913,14 +1913,21 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
     let method = req.method().as_str().to_string();
     let path = req.uri().path().to_string();
 
-    // SHADOW-only CF Access JWT verification on sensitive routes (P5, CF_JWT_VERIFY=0).
-    // Observe + log; identity still comes from the plaintext header; nothing blocked.
-    // eprintln! so the observations surface in journalctl -u aetheris-core (the app
+    // CF Access JWT verification on sensitive routes (P5).
+    // - CF_JWT_VERIFY=1 (enforce): the VERIFIED JWT email is the authoritative identity;
+    //   an unverifiable/missing/forged assertion degrades to `unknown` (denied on
+    //   sensitive routes by OPA), closing the plaintext-header spoof gap.
+    // - CF_JWT_VERIFY=0 (shadow): observe + log only; identity still from the header.
+    // eprintln! so observations surface in journalctl -u aetheris-core (the app
     // installs logging via tracing, not the `log` facade).
+    let mut identity_email = email.clone();
     if is_sensitive(&method, &path) {
         match auth::cf_jwt::verify_assertion(headers, &state.cf_jwt) {
             Ok(identity) => {
-                if !identity.email.is_empty() && !email.is_empty() && identity.email != email {
+                if state.cf_jwt.enabled {
+                    identity_email = identity.email;
+                } else if !identity.email.is_empty() && !email.is_empty() && identity.email != email
+                {
                     eprintln!(
                         "CFJWT shadow: header-email mismatch {} != {} on {} {}",
                         email, identity.email, method, path
@@ -1929,19 +1936,27 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
             }
             Err(e) => {
                 eprintln!(
-                    "CFJWT shadow: verify failed on {} {} ({}): {}",
+                    "CFJWT {}: verify failed on {} {} ({}): {}",
+                    if state.cf_jwt.enabled {
+                        "deny"
+                    } else {
+                        "shadow"
+                    },
                     method,
                     path,
                     if email.is_empty() { "<none>" } else { &email },
                     e
                 );
+                if state.cf_jwt.enabled {
+                    identity_email = String::new();
+                }
             }
         }
     }
 
     let input = bridge::AuthzInput {
-        identity: email.clone(),
-        role: access_role(&email, client_id.as_deref()).to_string(),
+        identity: identity_email.clone(),
+        role: access_role(&identity_email, client_id.as_deref()).to_string(),
         method: method.clone(),
         path: path.clone(),
         action: "http".to_string(),
@@ -2388,6 +2403,14 @@ mod tests {
     }
 
     fn test_state(bridge: Arc<dyn SecurityBridge>, opa_enforce: bool) -> Arc<AppState> {
+        test_state_cf(bridge, opa_enforce, false)
+    }
+
+    fn test_state_cf(
+        bridge: Arc<dyn SecurityBridge>,
+        opa_enforce: bool,
+        cf_enabled: bool,
+    ) -> Arc<AppState> {
         let dir = std::env::temp_dir().join(format!("aetheris_opa3_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).ok();
         let vault_dir = dir.join("vault");
@@ -2421,7 +2444,7 @@ mod tests {
                 team_domain: "https://nrupal.cloudflareaccess.com".to_string(),
                 aud: std::collections::HashSet::new(),
                 jwks_path: std::env::temp_dir().join("missing_jwks.json"),
-                enabled: false,
+                enabled: cf_enabled,
             },
             port_registry: serde_json::json!({}),
             dev_logs: Mutex::new(Vec::new()),
@@ -2445,7 +2468,15 @@ mod tests {
     }
 
     async fn test_app(bridge: Arc<dyn SecurityBridge>, opa_enforce: bool) -> Router {
-        let state = test_state(bridge, opa_enforce);
+        test_app_cf(bridge, opa_enforce, false).await
+    }
+
+    async fn test_app_cf(
+        bridge: Arc<dyn SecurityBridge>,
+        opa_enforce: bool,
+        cf_enabled: bool,
+    ) -> Router {
+        let state = test_state_cf(bridge, opa_enforce, cf_enabled);
         let handler = || async { "hello" };
         Router::new()
             .route("/sensitive", axum::routing::post(handler))
@@ -2578,5 +2609,90 @@ mod tests {
             access_role("nrupalakolkar@gmail.com", Some("abc.def")),
             "admin"
         );
+    }
+
+    /// A SecurityBridge that records the last (identity, role) it was asked to
+    /// authorize and always denies, so tests can assert what identity opa_gate
+    /// derived (verified-JWT vs header).
+    struct RecordingBridge(Mutex<Option<(String, String)>>);
+    impl RecordingBridge {
+        fn new() -> Self {
+            RecordingBridge(Mutex::new(None))
+        }
+        fn take(&self) -> (String, String) {
+            self.0.lock().unwrap().clone().unwrap_or_default()
+        }
+    }
+    #[async_trait::async_trait]
+    impl AetherisBridge for RecordingBridge {
+        fn name(&self) -> &str {
+            "record"
+        }
+        async fn health_check(&self) -> bool {
+            true
+        }
+    }
+    #[async_trait::async_trait]
+    impl SecurityBridge for RecordingBridge {
+        async fn authorize(&self, input: &AuthzInput) -> bool {
+            *self.0.lock().unwrap() = Some((input.identity.clone(), input.role.clone()));
+            false
+        }
+        async fn authorize_agent(&self, _input: &AuthzInput) -> bool {
+            false
+        }
+        fn enforcing(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn enforce_unverified_sensitive_degrades_to_unknown() {
+        // CF_JWT_VERIFY=1 + no/missing assertion on a sensitive route: identity
+        // degrades to unknown, role unknown -> denied. The plaintext header must NOT
+        // be trusted as admin (closes the spoof gap).
+        let rec = Arc::new(RecordingBridge::new());
+        let app = test_app_cf(rec.clone() as Arc<dyn SecurityBridge>, true, true).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sensitive")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let (identity, role) = rec.take();
+        assert_eq!(identity, "", "spoofed/unverified identity must not be used");
+        assert_eq!(role, "unknown");
+    }
+
+    #[tokio::test]
+    async fn shadow_keeps_header_identity_on_sensitive() {
+        // CF_JWT_VERIFY=0 (shadow): identity still from the plaintext header.
+        let rec = Arc::new(RecordingBridge::new());
+        let app = test_app_cf(rec.clone() as Arc<dyn SecurityBridge>, false, false).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sensitive")
+                    .header(
+                        "Cf-Access-Authenticated-User-Email",
+                        "nrupalakolkar@gmail.com",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK); // opa_enforce=false -> passes through
+        let (identity, role) = rec.take();
+        assert_eq!(identity, "nrupalakolkar@gmail.com");
+        assert_eq!(role, "admin");
     }
 }

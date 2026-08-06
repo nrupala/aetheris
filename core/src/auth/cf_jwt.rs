@@ -166,6 +166,9 @@ mod tests {
     use rsa::traits::PublicKeyParts;
     use std::collections::HashSet;
     use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
 
     const KID: &str = "p5test";
     const TEAM: &str = "https://nrupal.cloudflareaccess.com";
@@ -193,7 +196,8 @@ mod tests {
                 "n": b64url(&n), "e": b64url(&e)
             }]
         });
-        let dir = std::env::temp_dir().join(format!("p5test{}", std::process::id()));
+        let seq = TEST_DIR_SEQ.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("p5test{}_{}", std::process::id(), seq));
         fs::create_dir_all(&dir).ok();
         let jwks_path = dir.join("jwks.json");
         fs::write(&jwks_path, jwks.to_string()).ok();
