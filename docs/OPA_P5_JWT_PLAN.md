@@ -1,10 +1,10 @@
-# OPA P5 — JWT Identity Verification (SHADOW phase in progress; NOT enforced)
+# OPA P5 — JWT Identity Verification (LIVE: enforced via CF_JWT_VERIFY=1)
 
-> Status: **Shadow build (P5.2)**. Today's OPA identity is a plaintext
-> `Cf-Access-Authenticated-User-Email` header injected by Cloudflare Access. Safe only
-> because core binds `127.0.0.1:8080` (loopback) and iptables refuses external NEW to 8080.
-> P5 adds verification of the *signed* `Cf-Access-Jwt-Assertion` — shadow-only first
-> (log mismatches, block nothing), then opt-in enforcement via a new flag.
+> Status: **Enforced (CF_JWT_VERIFY=1 since 2026-08-06)**. P5.2 shadow (log-only) soaked
+> clean for 48h; P5.4 made the flag functional — the verified `Cf-Access-Jwt-Assertion`
+> email is the authoritative identity on sensitive routes; unverifiable → `unknown`
+> (denied), closing the plaintext-header `Cf-Access-Authenticated-User-Email` spoof gap.
+> Shadow (CF_JWT_VERIFY=0) remains available as rollback.
 
 ## §0 — Resolved values (locked)
 - **Team / issuer:** `https://nrupal.cloudflareaccess.com`
