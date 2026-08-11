@@ -14,7 +14,7 @@ The Agent Orchestrator is the multi-agent coordination layer of Aetheris v2.0. I
 │  ┌─────────┐  ┌─────────┐  ┌─────────────┐  ┌──────────────┐  │
 │  │  RAG    │  │   AI    │  │   Agent     │  │     Dev      │  │
 │  │ Engine  │  │ Engine  │  │ Orchestrator│  │   Engine     │  │
-│  │ :8080   │  │ :1234   │  │   :9090     │  │   :8443      │  │
+│  │ :8080   │  │ :1234   │  │  (in core)  │  │   :8443      │  │
 │  └────┬────┘  └────┬────┘  └──────┬──────┘  └──────┬───────┘  │
 │       │            │              │                │           │
 │       └────────────┴──────────────┼────────────────┘           │
@@ -64,6 +64,7 @@ The MCP (Model Context Protocol) server provides standardized tool/resource/prom
 - `file_read` — Read files from workspace
 - `file_write` — Write files to workspace
 - `list_directory` — List workspace directory contents
+- `code_execute` — Execute code in the sandboxed workspace
 
 **Prompts** (5 templates):
 - `research_brief` — Structured research brief generation
@@ -128,9 +129,7 @@ GET  /tasks                — List recent tasks
 POST /workflow/run         — Run multi-agent workflow
 GET  /agents               — List agents
 GET  /agents/status        — Agent status
-POST /mcp/request          — MCP protocol endpoint
-GET  /mcp/tools            — List MCP tools
-GET  /mcp/prompts          — List MCP prompts
+GET  /mcp/tools            — Discover MCP tools (names, descriptions, schemas)
 GET  /health               — Health check
 ```
 
@@ -196,36 +195,21 @@ Recommendation types:
 
 ```
 GET  /orchestrator/state          — Cross-engine state dashboard
-POST /orchestrator/state/engine/* — Update engine state
 GET  /orchestrator/forecast       — Resource spread forecast
-GET  /orchestrator/kg-hub         — Shared KG dashboard
-POST /orchestrator/kg-hub/write   — Write to shared KG
-GET  /orchestrator/snapshot       — Create state snapshot
+GET  /coordinator/circuits        — Circuit-breaker status
 GET  /a2a/messages                — A2A message log
+GET  /audit/log                   — Audit log
+GET  /audit/replay                — Audit replay
 ```
 
 ## Deployment
 
-The Aetheris **core** deploys natively under `systemd` (no Docker) — see
-[`../DEPLOY_NATIVE.md`](../DEPLOY_NATIVE.md). The agent orchestrator runs as part of
-the **LLMVM subsystem**, which legitimately retains its own container runtime; the
-compose fragment below is that subsystem's runtime, not the core deploy.
-
-### Docker Compose (LLMVM subsystem)
-
-```yaml
-llmvm-orchestrator:
-  build: ../LLMVM (Dockerfile.orchestrator)
-  ports: 9090:9090
-  volumes:
-    - orchestrator_data:/workspace
-    - rag_core:/workspace/rag_core
-    - agent_orchestrator:/workspace/agent_orchestrator
-  environment:
-    - LMSTUDIO_ENDPOINT=http://host.docker.internal:1234
-    - OPA_ENDPOINT=http://opa-gateway:8181
-    - WORKSPACE_ROOT=/workspace
-```
+The agent orchestrator is **not a separate service** — it runs inside the Aetheris Rust
+**core**, deployed natively under `systemd` (no Docker) — see
+[`../DEPLOY_NATIVE.md`](../DEPLOY_NATIVE.md). The `/task/*`, `/workflow/run`, `/agents`,
+`/mcp/tools`, `/a2a/messages`, and `/orchestrator/*` routes are all served by core on
+`127.0.0.1:8080`. The standalone Python orchestrator has been retired; its old FastAPI
+server is archived under `legacy/agent_orchestrator/server.py` and is no longer deployed.
 
 ### Tunnel & Access (native)
 

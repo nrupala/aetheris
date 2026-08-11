@@ -88,20 +88,20 @@ User uploads documents → RAG Chunker splits text → Embedder generates vector
 
 ```bash
 # Upload documentation
-curl -X POST "http://localhost:8081/ingest/file" -F "file=@notes.md"
+curl -X POST "http://127.0.0.1:8080/ingest/file" -F "file=@notes.md"
 
 # Ask a question
-curl -X POST "http://localhost:8081/query" \
+curl -X POST "http://127.0.0.1:8080/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "How do I configure WireGuard on this system?"}'
 
 # With advanced options
-curl -X POST "http://localhost:8081/query" \
+curl -X POST "http://127.0.0.1:8080/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "What are the ZFS snapshot policies?", "top_k": 5, "threshold": 0.8}'
 
 # Check what's indexed
-curl "http://localhost:8081/stats"
+curl "http://127.0.0.1:8080/stats"
 ```
 
 **Best for:**
@@ -461,8 +461,8 @@ sudo ./scripts/killswitch.sh
             ┌──────────────────────┼──────────────────────┐
             ▼                      ▼                      ▼
     ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-    │  Rust Core    │     │  LLMVM RAG    │     │  Agent Orch.  │
-    │  :8080        │     │  :8081        │     │  :9090        │
+    │  Rust Core    │     │  RAG + KG     │     │  Agent Orch.  │
+    │  :8080        │     │  (in core)    │     │  (in core)    │
     │               │     │               │     │               │
     │ • File ops    │◄───►│ • Chunker     │◄───►│ • Researcher  │
     │ • OPA auth    │     │ • Embedder    │     │ • Coder       │
@@ -579,10 +579,10 @@ curl http://localhost:8080/health
 curl http://localhost:8080/metrics
 
 # Upload a document to RAG
-curl -X POST http://localhost:8081/ingest/file -F "file=@document.md"
+curl -X POST http://127.0.0.1:8080/ingest/file -F "file=@document.md"
 
 # Query the knowledge base
-curl -X POST http://localhost:8081/query \
+curl -X POST http://127.0.0.1:8080/query \
   -H "Content-Type: application/json" \
   -d '{"query": "your question here"}'
 
@@ -682,7 +682,7 @@ Every capability is accessible via REST. This is the primary integration method.
 curl http://localhost:8080/health
 
 # RAG query
-curl -X POST http://localhost:8081/query -d '{"query":"..."}'
+curl -X POST http://127.0.0.1:8080/query -d '{"query":"..."}'
 
 # Agent task
 curl -X POST http://127.0.0.1:8080/task/submit -d '{"task":"..."}'
@@ -1116,56 +1116,28 @@ Generate a security review following:
 ))
 ```
 
-#### API Handshake Endpoints for MCP
+#### MCP surface on core
 
-| Endpoint | Method | MCP Method | Purpose |
-|----------|--------|-----------|---------|
-| `POST /mcp/request` | POST | `initialize` | MCP handshake — returns server info + capabilities |
-| `POST /mcp/request` | POST | `tools/list` | List all registered tools with schemas |
-| `POST /mcp/request` | POST | `tools/call` | Execute a tool by name |
-| `POST /mcp/request` | POST | `resources/list` | List all registered resources |
-| `POST /mcp/request` | POST | `resources/read` | Read a resource by URI |
-| `POST /mcp/request` | POST | `prompts/list` | List all registered prompt templates |
-| `POST /mcp/request` | POST | `prompts/render` | Render a prompt with arguments |
-| `GET /mcp/tools` | GET | — | List tools (direct HTTP shortcut) |
-| `GET /mcp/prompts` | GET | — | List prompts (direct HTTP shortcut) |
-| `GET /mcp/resources` | GET | — | List resources (direct HTTP shortcut) |
+The Rust core exposes the Model Context Protocol as **discovery + direct HTTP tool calls** — there is no JSON-RPC envelope endpoint. `GET /mcp/tools` returns the registered tools with their descriptions and input schemas, and each tool's action is invoked through its own first-class HTTP route.
 
-#### MCP Handshake Flow
+| Capability | Endpoint | Notes |
+|------------|----------|-------|
+| Discover MCP tools | `GET /mcp/tools` | Names, descriptions, and input schemas of the registered tools |
+| Invoke a tool | the tool's own HTTP route | e.g. `rag_query` → `POST /query`; `rag_ingest` → `POST /ingest/file` |
 
-```
-Client → POST /mcp/request {"method": "initialize"}
-  ← {"name": "aetheris-orchestrator", "version": "2.0.0",
-     "capabilities": {"tools": {"list": true, "call": true}, ...}}
-
-Client → POST /mcp/request {"method": "tools/list"}
-  ← {"tools": [{"name": "rag_query", "description": "...", "inputSchema": {...}}, ...]}
-
-Client → POST /mcp/request {"method": "tools/call",
-         "params": {"name": "vulnerability_scan", "arguments": {"repo_path": "/src"}}}
-  ← {"success": true, "result": {"vulnerabilities_found": 3, ...}}
-```
-
-#### Example: MCP tools exposed by core
-
-The core serves MCP tool discovery at `GET /mcp/tools`; MCP **tool calls** map onto the
-core's direct HTTP endpoints (e.g. RAG `POST /query`):
+Every API route is served both bare and under the `/api/` prefix — `GET /mcp/tools` and `GET /api/mcp/tools` are equivalent, because the core router mounts the API set at both paths (`.nest("/api", …).merge(…)`).
 
 ```bash
-# List MCP tools exposed by core
+# Discover the MCP tools the core exposes (names, descriptions, schemas)
 curl http://127.0.0.1:8080/mcp/tools
 
-# Run a RAG query (the rag_query tool, direct HTTP form)
+# Invoke the rag_query tool in its direct HTTP form
 curl -X POST "http://127.0.0.1:8080/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "How is authentication handled?", "top_k": 3}'
 ```
 
-> Correction (2026-08-11): the legacy `/mcp/request` JSON-RPC endpoint of the removed
-> Python orchestrator (`:9090`) does not exist on core. Use `/mcp/tools` (list) and the
-> direct HTTP endpoints (`/query`, `/task/submit`, `/workflow/run`, `/orchestrator/state`,
-> `/orchestrator/forecast`) — or the agent MCP bridge (oc-bridge) for tool-call semantics.
->
+For programmatic MCP-style request/response tool-call semantics, use the agent MCP bridge (`oc-bridge`) rather than a raw core endpoint.
 
 ---
 
@@ -1235,9 +1207,7 @@ Every extension is automatically discoverable through existing endpoints:
 |------|-------------------|-------------------|
 | **Models** | `GET /health` (shows model info per agent) | Config env vars or `ModelInfo` object |
 | **Agents** | `GET /agents`, `GET /agents/status` | Config `agent_roles` or `create_agent()` |
-| **MCP Tools** | `POST /mcp/request` (method: `tools/list`), `GET /mcp/tools` | `@registry.register()` decorator |
-| **MCP Resources** | `POST /mcp/request` (method: `resources/list`), `GET /mcp/resources` | `resource_server.add_resource()` |
-| **MCP Prompts** | `POST /mcp/request` (method: `prompts/list`), `GET /mcp/prompts` | `prompt_library.add_prompt()` |
+| **MCP Tools** | `GET /mcp/tools` | `@registry.register()` decorator |
 | **A2A Engines** | `GET /a2a/messages` | `A2AMessageBus` + `OPAPolicyGate` |
 | **Orchestrator State** | `GET /orchestrator/state` | `CrossEngineState.update_engine()` |
 
@@ -1307,32 +1277,27 @@ http://localhost:8080/metrics      # Prometheus metrics
 POST /upload                       # File upload
 GET /download/{filename}           # File download
 
-# RAG
-http://localhost:8081/health       # RAG health
-POST /query                        # Ask a question
-POST /ingest/file                  # Upload document
+# RAG (served by core — 127.0.0.1:8080)
+POST /query                        # Ask a question (rag_query)
+POST /ingest/file                  # Index a document (rag_ingest)
 GET /stats                         # Index statistics
 GET /sources                       # List indexed sources
 DELETE /sources/{path}             # Remove a source
+GET /search                        # Keyword search
 
-# ORCHESTRATOR (core — 127.0.0.1:8080, tunnel: agents.nrupalakolkar.com)
-http://127.0.0.1:8080/health       # Service health
+# ORCHESTRATOR / AGENTS (core — 127.0.0.1:8080, tunnel: agents.nrupalakolkar.com)
 POST /task/submit                  # Submit task (auto-creates agent if new role)
 GET /tasks                         # Task list / status
 GET /agents                        # List registered agents
 GET /agents/status                 # Agent health (idle/busy counts)
 POST /workflow/run                 # Multi-agent workflow
-GET /orchestrator/state            # Orchestrator state dashboard
-GET /orchestrator/forecast         # Predictive forecast
-GET /mcp/tools                     # List MCP tools (shortcut)
-GET /a2a/messages                  # Agent-to-agent messages
-# (legacy Python-orchestrator endpoints — /agent/task, /mcp/request, /mcp/prompts,
-#  /mcp/resources, /orchestrator/state/engine/{name} — were removed; see MCP note above)
+GET /orchestrator/state            # Cross-engine state dashboard
 GET /orchestrator/forecast         # Resource spread forecast
-GET /orchestrator/kg-hub           # Shared KG dashboard
-POST /orchestrator/kg-hub/write    # Write to shared KG
-GET /orchestrator/snapshot         # Create state snapshot
-GET /a2a/messages                  # A2A message log
+GET /coordinator/circuits          # Circuit-breaker status
+GET /mcp/tools                     # Discover MCP tools (+ schemas)
+GET /a2a/messages                  # Agent-to-agent message log
+GET /audit/log                     # Audit log
+GET /audit/replay                  # Audit replay
 
 # INFRASTRUCTURE
 http://localhost:8428/health       # VictoriaMetrics
