@@ -1,3 +1,18 @@
+# ============================================================================
+# ARCHIVED / NOT DEPLOYED — retained for historical reference only.
+#
+# This is the retired standalone Python agent-orchestrator (formerly the
+# Dockerized service on :9090). Its responsibilities — task submission,
+# multi-agent workflows, MCP tool discovery, A2A messaging, and orchestrator
+# state/forecast — now run natively inside the Aetheris Rust core on
+# 127.0.0.1:8080 (see docs/guides/agent-orchestrator.md). The JSON-RPC
+# /mcp/request, /mcp/prompts, and /mcp/resources endpoints below do NOT exist
+# on core; core exposes MCP as GET /mcp/tools plus direct first-class HTTP
+# routes.
+#
+# Archived 2026-08-11. Do not deploy. No Docker.
+# ============================================================================
+
 """
 Agent Orchestrator Server — FastAPI server with MCP, A2A, multi-agent, and Phase 3 cross-system orchestration.
 
