@@ -1,0 +1,60 @@
+%% Aetheris live system blueprint — 2026-08-11 (evidence-based; see visual_bluepint_aetheris_Aug112026.md)
+flowchart TB
+  subgraph EDGE["INTERNET / EDGE"]
+    USR["Browsers / users"]
+    CFA["Cloudflare Access - identity gate, signed JWT"]
+    TUN["cloudflared tunnel - token-managed, dashboard ingress"]
+    USR --> CFA --> TUN
+  end
+
+  TUN -->|"oracle / ai / rag / dev / agents"| CORE
+
+  subgraph CORE["AETHERIS CORE - native Rust / Axum - 127.0.0.1:8080"]
+    GW["API gateway - 38+ routes + web panels (Host-header serving)"]
+    SEC["Zero-trust layer: opa_gate - is_sensitive - CFJWT verify - OPA authorize"]
+    AI["AI Chat - /v1 OpenAI-compatible proxy to Ollama"]
+    RAG["RAG - /query /ingest/file /sources /stats /config"]
+    AGT["Agents - /task/submit /workflow/run /agents* /a2a /mcp/tools"]
+    KG["Knowledge graph - /knowledge-graph/*"]
+    AUX["WAL / audit / chronicle / sync / keys / settings / coordinator / health / metrics"]
+    PAN["Panels: ai - agents - rag - dev - guardian - settings"]
+    BR["Bridges - OllamaBridge - OpaBridge - ModelBridge"]
+    GW --> SEC
+    SEC --> AI
+    SEC --> RAG
+    SEC --> AGT
+    SEC --> KG
+    SEC --> AUX
+    SEC --> PAN
+    BR --- AI
+    BR --- RAG
+    BR --- AGT
+  end
+
+  subgraph BACK["CORE BACKING (loopback-only)"]
+    OLL["Ollama :11434 - nomic-embed-text - phi4-mini - qwen2.5:7b - qwen2.5-coder:7b - qwen3:8b"]
+    OPA["OPA :8181 - aetheris.authz + aetheris.agents (enforce=1)"]
+    VLT["Vault /data/vault - uploads - vectors.db(768d) - knowledge_graph.db - wal/ - chronicle/ - rag_config.json"]
+    JWKS["CF-Access JWKS - pinned - hourly refresh (keep-last-good)"]
+    AI --> OLL
+    RAG --> OLL
+    RAG --> VLT
+    AGT --> OLL
+    AGT --> OPA
+    SEC --> OPA
+    SEC --> JWKS
+  end
+
+  subgraph SVC["SUPPORTING SOVEREIGN SERVICES (parallel, same tunnel)"]
+    MGM["aetheris-mgmt :9090 - Management API"]
+    BEE["bee :8800 - Budget & Economy Engine"]
+    RA["ra :8700 - Research Analyst (FastAPI/uvicorn)"]
+    GA["guardian-agent :8081 - Aetheris AI agent webui.py"]
+    CS["code-server :8088 - VS Code in the browser"]
+    OCB["oc-bridge :8888 - MCP bridge (read-only, CF-JWT) -> opencode :8192"]
+  end
+
+  TUN -->|mgmt| MGM
+  TUN -->|"bee.* / ra-origin"| BEE
+  TUN -->|"bee.* / ra-origin"| RA
+  TUN -->|"oc.devinfo.dev / oc.aimlds.org"| OCB

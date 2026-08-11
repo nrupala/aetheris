@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aetheris — Live System Blueprint (2026-08-11)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3;
+    --muted:#8b949e; --accent:#58a6ff; --green:#3fb950; --orange:#d29922; --purple:#bc8cff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);}
+  .wrap{max-width:1400px;margin:0 auto;padding:24px;}
+  h1{font-size:22px;margin-bottom:4px;}
+  h1 span{color:var(--green);}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px;}
+  .toolbar{display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap;}
+  button{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;}
+  button:hover{border-color:var(--accent);}
+  .link{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:13px;color:var(--accent);text-decoration:none;margin-left:auto;}
+  .link:hover{border-color:var(--accent);}
+  .canvas{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:auto;padding:16px;}
+  .canvas svg{max-width:none;transition:transform .1s;}
+  h2{font-size:16px;margin:28px 0 10px;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:6px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;}
+  th,td{text-align:left;padding:8px 10px;border:1px solid var(--border);}
+  th{background:var(--surface);color:var(--accent);}
+  td code,li code{background:var(--surface);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--purple);}
+  ul{list-style:none;}
+  li{padding:6px 0 6px 22px;position:relative;font-size:14px;line-height:1.55;}
+  li::before{content:"▸";position:absolute;left:6px;color:var(--green);}
+  .note{background:#2d1f02;border:1px solid var(--orange);border-radius:8px;padding:14px 16px;font-size:13px;margin:10px 0;line-height:1.6;}
+  .note b{color:var(--orange);}
+  .flow{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:13px;line-height:1.7;color:var(--muted);}
+  .flow b{color:var(--text);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Aetheris — <span>Living System Blueprint</span></h1>
+  <div class="sub">Evidence-based snapshot: 2026-08-11 · oracle-aetheris tunnel v26 · host <code>aetheris-free-tier</code> (Ubuntu 24.04.4 LTS, arm64, 4 core, 23 GiB) · companion: <code>visual_bluepint_aetheris_Aug112026.md</code></div>
+
+  <div class="toolbar">
+    <button onclick="zoomIn()">＋ Zoom in</button>
+    <button onclick="zoomOut()">－ Zoom out</button>
+    <button onclick="zoomReset()">⟲ Reset</button>
+    <a class="link" href="aetheris_blueprint.png" download>Aetheris blueprint PNG</a>
+    <a class="link" href="aetheris_blueprint.pdf" download>Aetheris blueprint PDF</a>
+  </div>
+
+  <div class="canvas" id="canvas"></div>
+
+  <h2>Process / request lifecycle</h2>
+  <div class="flow">
+    1. <b>Browser → Cloudflare Access</b> — identity check at the edge; a signed <code>Cf-Access-Jwt-Assertion</code> is injected.<br>
+    2. <b>cloudflared tunnel</b> forwards to the loopback service its hostname maps to (ingress table below).<br>
+    3. For core routes, <b>opa_gate</b> runs: if *sensitive* (mutating verb, or GET of <code>/keys /audit /sync/download /dev/logs</code>), core verifies the JWT (RS256, pinned JWKS, iss + aud ∈ 5-AUD set). A verified email is the <b>authoritative identity</b>; missing/forged → denied.<br>
+    4. <b>OPA authorize</b> (aetheris.authz / aetheris.agents, role-aware). Under <code>OPA_ENFORCE=1</code> a deny → <b>403</b>.<br>
+    5. Dispatch to engines → Ollama (embed/chat) + vault (SQLite vectors/KG/WAL).<br>
+    6. Decision observability: OPA <code>decision_logs.console</code>, metrics, audit/WAL.
+  </div>
+
+  <h2>Tunnel ingress (ground truth — Cloudflare API)</h2>
+  <table>
+    <tr><th>Hostname(s)</th><th>→ loopback</th><th>Service</th></tr>
+    <tr><td><code>oracle ai rag dev agents</code></td><td>127.0.0.1:8080</td><td>Aetheris Core</td></tr>
+    <tr><td><code>mgmt</code></td><td>127.0.0.1:9090</td><td>aetheris-mgmt</td></tr>
+    <tr><td><code>ra-origin</code>, <code>bee.*</code></td><td>:8700 · :8800</td><td>ra · bee</td></tr>
+    <tr><td><code>oc.devinfo.dev</code>, <code>oc.aimlds.org</code></td><td>127.0.0.1:8888</td><td>oc-bridge (MCP)</td></tr>
+  </table>
+
+  <h2>Services (systemd — all enabled + running)</h2>
+  <table>
+    <tr><th>Unit</th><th>Port</th><th>Role</th></tr>
+    <tr><td><code>aetheris-core</code></td><td>8080</td><td>Native Rust gateway + engines + panels</td></tr>
+    <tr><td><code>aetheris-agent</code></td><td>8081</td><td>Aetheris AI sovereign agent surface (webui.py)</td></tr>
+    <tr><td><code>aetheris-mgmt</code></td><td>9090</td><td>Management API (mgmt.py)</td></tr>
+    <tr><td><code>opa</code></td><td>8181</td><td>Open Policy Agent (native, loopback)</td></tr>
+    <tr><td><code>ollama</code></td><td>11434</td><td>Local LLM / embeddings (0.24.0)</td></tr>
+    <tr><td><code>cloudflared</code></td><td>—</td><td>Tunnel ingress (token-managed)</td></tr>
+    <tr><td><code>oc-bridge</code></td><td>8888</td><td>MCP Streamable-HTTP bridge → opencode</td></tr>
+    <tr><td><code>opencode</code></td><td>8192</td><td>OpenCode HTTP API for oc-bridge</td></tr>
+    <tr><td><code>bee</code></td><td>8800</td><td>Budget &amp; Economy Engine</td></tr>
+    <tr><td><code>ra</code></td><td>8700</td><td>Research Analyst (FastAPI/uvicorn)</td></tr>
+    <tr><td><code>code-server</code></td><td>8088</td><td>VS Code in the browser (password auth)</td></tr>
+    <tr><td><code>cf-access-jwks.timer</code></td><td>—</td><td>Hourly CF-Access JWKS refresh (keep-last-good)</td></tr>
+  </table>
+
+  <h2>Verified features — today</h2>
+  <ul>
+    <li><b>Zero-trust gateway:</b> CF-Access identity + signed-JWT verify (5-AUD set, hourly key refresh); OPA enforcement LIVE (authz + agents packages, method-aware <code>is_sensitive</code>, fail-closed on sensitive routes).</li>
+    <li><b>AI Chat:</b> OpenAI-compatible <code>/v1/*</code> proxy → Ollama (<code>qwen2.5:7b</code> live default; <code>phi4-mini</code>, <code>qwen3:8b</code>, <code>qwen2.5-coder:7b</code> available).</li>
+    <li><b>RAG:</b> ingest (text/code + PDF→text) → <code>nomic-embed-text</code> 768-d → <code>vectors.db</code>; <code>/query</code> with top-k, <code>/config</code> (partial-merge), <code>/sources</code>, <code>/stats</code>, delete-with-cascade; embed-dim guard; rerank wired but <b>disabled</b> (no engine installed).</li>
+    <li><b>Agents:</b> Planner→Researcher→Coder→Reviewer; <code>/task/submit</code>, <code>/workflow/run</code>, <code>/agents*</code>; OPA per-role allowlists; in-process model calls.</li>
+    <li><b>MCP &amp; A2A:</b> <code>/mcp/tools</code> (9 tools), <code>/a2a/messages</code>; oc-bridge exposes OpenCode API as read-only MCP (CF-JWT gated).</li>
+    <li><b>Data/ops:</b> knowledge graph (<code>knowledge_graph.db</code>), WAL, Chronicle snapshots, audit log + replay, sync, keys, settings, coordinator circuits, orchestrator state/forecast, metrics/health.</li>
+    <li><b>Panels (zero-JS HTML, Host-header served):</b> ai · agents · rag · dev (API console, RAG config/test, system) · guardian · settings.</li>
+  </ul>
+
+  <div class="note">
+    <b>Honest corrections (live check vs older docs):</b> no ZFS (storage is ext4 on <code>/data</code>); no nginx (core serves panels by Host header);
+    Docker installed but <b>zero containers</b> (fully native); no rerank engine yet (<code>llama-server</code>/<code>llamafile</code> absent); <code>agents.*</code> confirmed →
+    core <code>:8080</code>; <code>mgmt</code> is a real separate service on <code>:9090</code> (kept out of the core AUD set).
+  </div>
+</div>
+
+<script>
+let scale = 1;
+function svgNode(){
+  const s = document.querySelector('#canvas svg');
+  if(!s) return null;
+  return s;
+}
+function applyScale(){
+  const s = svgNode(); if(!s) return;
+  s.style.transform = `scale(${scale})`;
+  s.style.transformOrigin = 'top left';
+}
+function zoomIn(){ scale = Math.min(scale + 0.2, 3); applyScale(); }
+function zoomOut(){ scale = Math.max(scale - 0.2, 0.3); applyScale(); }
+function zoomReset(){ scale = 1; applyScale(); }
+
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  securityLevel: 'loose'
+});
+
+function insertDiagram(){
+  const canvas = document.getElementById('canvas');
+  canvas.innerHTML = `
+  <pre class="mermaid">
+flowchart TB
+  subgraph EDGE["INTERNET / EDGE"]
+    USR["Browsers / users"]
+    CFA["Cloudflare Access - identity gate, signed JWT"]
+    TUN["cloudflared tunnel - token-managed, dashboard ingress"]
+    USR --> CFA --> TUN
+  end
+  TUN -->|"oracle / ai / rag / dev / agents"| CORE
+  subgraph CORE["AETHERIS CORE - native Rust / Axum - 127.0.0.1:8080"]
+    GW["API gateway - 38+ routes + web panels (Host-header)"]
+    SEC["Zero-trust layer: opa_gate - is_sensitive - CFJWT verify - OPA authorize"]
+    AI["AI Chat - /v1 OpenAI-compatible proxy to Ollama"]
+    RAG["RAG - /query /ingest/file /sources /stats /config"]
+    AGT["Agents - /task/submit /workflow/run /agents* /a2a /mcp/tools"]
+    KG["Knowledge graph - /knowledge-graph/*"]
+    AUX["WAL / audit / chronicle / sync / keys / settings / metrics / health"]
+    PAN["Panels: ai - agents - rag - dev - guardian - settings"]
+    BR["Bridges - OllamaBridge - OpaBridge - ModelBridge"]
+    GW --> SEC
+    SEC --> AI & RAG & AGT & KG & AUX & PAN
+    BR --- AI & RAG & AGT
+  end
+  subgraph BACK["CORE BACKING (loopback-only)"]
+    OLL["Ollama :11434 - nomic-embed-text - phi4-mini - qwen2.5:7b - qwen2.5-coder:7b - qwen3:8b"]
+    OPA["OPA :8181 - aetheris.authz + aetheris.agents (enforce=1)"]
+    VLT["Vault /data/vault - uploads - vectors.db(768d) - knowledge_graph.db - wal - chronicle - rag_config.json"]
+    JWKS["CF-Access JWKS - pinned - hourly refresh (keep-last-good)"]
+    AI --> OLL
+    RAG --> OLL
+    RAG --> VLT
+    AGT --> OLL
+    AGT --> OPA
+    SEC --> OPA
+    SEC --> JWKS
+  end
+  subgraph SVC["SUPPORTING SOVEREIGN SERVICES (parallel, same tunnel)"]
+    MGM["aetheris-mgmt :9090 - Management API"]
+    BEE["bee :8800 - Budget & Economy Engine"]
+    RA["ra :8700 - Research Analyst (FastAPI/uvicorn)"]
+    GA["guardian-agent :8081 - Aetheris AI agent webui.py"]
+    CS["code-server :8088 - VS Code in the browser"]
+    OCB["oc-bridge :8888 - MCP bridge (read-only, CF-JWT) -> opencode :8192"]
+  end
+  TUN -->|mgmt| MGM
+  TUN -->|"bee.* / ra-origin"| BEE
+  TUN -->|"bee.* / ra-origin"| RA
+  TUN -->|"oc.devinfo.dev / oc.aimlds.org"| OCB
+  </pre>`;
+  mermaid.run({ querySelector: '#canvas .mermaid' }).catch(e=>console.error(e));
+}
+window.addEventListener('load', insertDiagram);
+</script>
+</body>
+</html>
