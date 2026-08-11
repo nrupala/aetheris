@@ -132,17 +132,17 @@ User submits task → PlannerAgent decomposes → ResearcherAgent queries RAG/KG
 
 ```bash
 # Submit a coding task
-curl -X POST "http://localhost:9090/agent/task" \
+curl -X POST "http://127.0.0.1:8080/task/submit" \
   -H "Content-Type: application/json" \
   -d '{"task": "Add error handling to the upload endpoint", "agent": "coder"}'
 
 # Run full multi-agent workflow
-curl -X POST "http://localhost:9090/agent/task" \
+curl -X POST "http://127.0.0.1:8080/task/submit" \
   -H "Content-Type: application/json" \
   -d '{"task": "Refactor the auth module to use async/await", "workflow": true}'
 
 # Use MCP tools directly
-curl -X POST "http://localhost:9090/tools/rag_query" \
+curl -X POST "http://127.0.0.1:8080/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "How is authentication handled?"}'
 ```
@@ -257,16 +257,16 @@ Team members join WireGuard mesh → Shared KG accumulates knowledge
 
 ```bash
 # Team member checks KG context
-curl "http://10.0.0.1:9090/knowledge-graph/context" \
+curl "http://10.0.0.1:8080/knowledge-graph/context" \
   -d '{"scope": "team-knowledge-base"}'
 
 # Submit a shared task
-curl -X POST "http://10.0.0.1:9090/workflow/run" \
+curl -X POST "http://10.0.0.1:8080/workflow/run" \
   -H "Content-Type: application/json" \
   -d '{"task": "Document the deployment process", "agents": ["planner", "researcher"]}'
 
 # Check A2A message history
-curl "http://10.0.0.1:9090/a2a/messages?scope=team-knowledge-base"
+curl "http://10.0.0.1:8080/a2a/messages?scope=team-knowledge-base"
 ```
 
 **Best for:**
@@ -298,7 +298,7 @@ Task → QueueController → ProcessingCoordinator (state machine)
 
 ```bash
 # Submit workflow
-curl -X POST "http://localhost:9090/orchestrator/workflow" \
+curl -X POST "http://127.0.0.1:8080/workflow/run" \
   -H "Content-Type: application/json" \
   -d '{
     "task": "Research best practices for Rust async error handling, then update our codebase",
@@ -306,10 +306,10 @@ curl -X POST "http://localhost:9090/orchestrator/workflow" \
   }'
 
 # Check forecaster (predictive analytics)
-curl "http://localhost:9090/orchestrator/forecast"
+curl "http://127.0.0.1:8080/orchestrator/forecast"
 
 # View coordinator state
-curl "http://localhost:9090/orchestrator/state"
+curl "http://127.0.0.1:8080/orchestrator/state"
 ```
 
 **Best for:**
@@ -407,7 +407,7 @@ python3 create_arm_instance.py  # Provision ARM VM
 ./deploy.sh                      # Deploy Aetheris stack
 
 # Resource-aware coordinator
-curl "http://localhost:9090/orchestrator/forecast"
+curl "http://127.0.0.1:8080/orchestrator/forecast"
 # Returns: {"cpu_bottleneck": false, "memory_pressure": "low", "recommendations": [...]}
 ```
 
@@ -587,12 +587,12 @@ curl -X POST http://localhost:8081/query \
   -d '{"query": "your question here"}'
 
 # Run an agent task
-curl -X POST http://localhost:9090/agent/task \
+curl -X POST http://127.0.0.1:8080/task/submit \
   -H "Content-Type: application/json" \
   -d '{"task": "Summarize recent changes"}'
 
 # Check coordinator status
-curl http://localhost:9090/orchestrator/state
+curl http://127.0.0.1:8080/orchestrator/state
 ```
 
 ### 6.3 Maintenance
@@ -685,7 +685,7 @@ curl http://localhost:8080/health
 curl -X POST http://localhost:8081/query -d '{"query":"..."}'
 
 # Agent task
-curl -X POST http://localhost:9090/agent/task -d '{"task":"..."}'
+curl -X POST http://127.0.0.1:8080/task/submit -d '{"task":"..."}'
 ```
 
 ### 8.2 MCP Integration
@@ -694,10 +694,10 @@ The Model Context Protocol server allows any MCP-compatible client (Claude Deskt
 
 ```bash
 # List available tools
-curl http://localhost:9090/mcp/tools
+curl http://127.0.0.1:8080/mcp/tools
 
 # Call a tool
-curl -X POST http://localhost:9090/tools/rag_query \
+curl -X POST http://127.0.0.1:8080/query \
   -H "Content-Type: application/json" \
   -d '{"query": "What is the ZFS snapshot policy?"}'
 ```
@@ -845,7 +845,7 @@ def _call_gemini(self, model, messages, ...):
 |----------|--------|---------|
 | `GET /orchestrator/state` | GET | View currently loaded models per engine |
 | `GET /health` | GET | Returns agent count, tool count, model info |
-| `POST /agent/task` | POST | Auto-routes to correct model based on task role |
+| `POST /task/submit` | POST | Auto-routes to correct model based on task role |
 
 The orchestrator's `/health` endpoint returns model routing information:
 
@@ -987,7 +987,7 @@ If you submit a task to a role that doesn't exist yet, the orchestrator auto-cre
 
 ```bash
 # Submit task to "security_auditor" — auto-created if missing
-curl -X POST "http://localhost:9090/task/submit" \
+curl -X POST "http://127.0.0.1:8080/task/submit" \
   -H "Content-Type: application/json" \
   -d '{"task": "Audit the upload endpoint for OWASP vulnerabilities", "role": "security_auditor"}'
 ```
@@ -1146,30 +1146,26 @@ Client → POST /mcp/request {"method": "tools/call",
   ← {"success": true, "result": {"vulnerabilities_found": 3, ...}}
 ```
 
-#### Example: Register a Tool and Call It via MCP
+#### Example: MCP tools exposed by core
+
+The core serves MCP tool discovery at `GET /mcp/tools`; MCP **tool calls** map onto the
+core's direct HTTP endpoints (e.g. RAG `POST /query`):
 
 ```bash
-# Step 1: Initialize MCP connection
-curl -X POST "http://localhost:9090/mcp/request" \
-  -H "Content-Type: application/json" \
-  -d '{"method": "initialize"}'
+# List MCP tools exposed by core
+curl http://127.0.0.1:8080/mcp/tools
 
-# Step 2: List available tools
-curl -X POST "http://localhost:9090/mcp/request" \
+# Run a RAG query (the rag_query tool, direct HTTP form)
+curl -X POST "http://127.0.0.1:8080/query" \
   -H "Content-Type: application/json" \
-  -d '{"method": "tools/list"}'
-
-# Step 3: Call a tool
-curl -X POST "http://localhost:9090/mcp/request" \
-  -H "Content-Type: application/json" \
-  -d '{"method": "tools/call",
-       "params": {"name": "rag_query",
-                   "arguments": {"query": "How is authentication handled?",
-                                 "top_k": 3}}}'
-
-# Or use direct HTTP shortcut
-curl "http://localhost:9090/mcp/tools"
+  -d '{"query": "How is authentication handled?", "top_k": 3}'
 ```
+
+> Correction (2026-08-11): the legacy `/mcp/request` JSON-RPC endpoint of the removed
+> Python orchestrator (`:9090`) does not exist on core. Use `/mcp/tools` (list) and the
+> direct HTTP endpoints (`/query`, `/task/submit`, `/workflow/run`, `/orchestrator/state`,
+> `/orchestrator/forecast`) — or the agent MCP bridge (oc-bridge) for tool-call semantics.
+>
 
 ---
 
@@ -1319,18 +1315,19 @@ GET /stats                         # Index statistics
 GET /sources                       # List indexed sources
 DELETE /sources/{path}             # Remove a source
 
-# ORCHESTRATOR
-http://localhost:9090/health       # Orchestrator health
-POST /agent/task                   # Submit task (auto-creates agent if new role)
+# ORCHESTRATOR (core — 127.0.0.1:8080, tunnel: agents.nrupalakolkar.com)
+http://127.0.0.1:8080/health       # Service health
+POST /task/submit                  # Submit task (auto-creates agent if new role)
+GET /tasks                         # Task list / status
 GET /agents                        # List registered agents
 GET /agents/status                 # Agent health (idle/busy counts)
 POST /workflow/run                 # Multi-agent workflow
-POST /mcp/request                  # MCP protocol: initialize, tools/*, resources/*, prompts/*
+GET /orchestrator/state            # Orchestrator state dashboard
+GET /orchestrator/forecast         # Predictive forecast
 GET /mcp/tools                     # List MCP tools (shortcut)
-GET /mcp/prompts                   # List MCP prompts (shortcut)
-GET /mcp/resources                 # List MCP resources (shortcut)
-POST /orchestrator/state/engine/{name}  # Update engine state
-GET /orchestrator/state            # Cross-engine state dashboard
+GET /a2a/messages                  # Agent-to-agent messages
+# (legacy Python-orchestrator endpoints — /agent/task, /mcp/request, /mcp/prompts,
+#  /mcp/resources, /orchestrator/state/engine/{name} — were removed; see MCP note above)
 GET /orchestrator/forecast         # Resource spread forecast
 GET /orchestrator/kg-hub           # Shared KG dashboard
 POST /orchestrator/kg-hub/write    # Write to shared KG

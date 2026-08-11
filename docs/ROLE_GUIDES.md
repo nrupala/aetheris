@@ -107,11 +107,12 @@ cargo build --profile llmvm
 ### Production Stack
 ```
 Browser → Cloudflare Access (edge auth) → Cloudflare Tunnel → aetheris-core (127.0.0.1:8080)
-  └── optionally → Python Orchestrator (127.0.0.1:9090)
-                     └── Ollama (127.0.0.1:11434)
+  └── ai/rag/dev/oracle/agents panels + agent API (all core; agents.* routes to :8080)
+      └── Ollama (127.0.0.1:11434)
 ```
 The core runs as a native `systemd` service (`aetheris-core`). There is no nginx —
-cloudflared points straight at the loopback core.
+cloudflared points straight at the loopback core. `agents.*` routes to core (`:8080`), not a
+separate `:9090` service; `:9090` is the separate mgmt service (excluded from `CF_ACCESS_AUD`).
 
 ### Deployment
 ```bash

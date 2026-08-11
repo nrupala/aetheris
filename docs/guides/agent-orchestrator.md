@@ -230,11 +230,15 @@ llmvm-orchestrator:
 ### Tunnel & Access (native)
 
 `agents.nrupalakolkar.com` is served through **cloudflared** pointing straight at the
-orchestrator on the loopback interface — there is no nginx reverse proxy. Identity is
+Aetheris core on the loopback interface — there is no nginx reverse proxy. Identity is
 gated by **Cloudflare Access** at the edge (no HTTP Basic Auth):
-- `cloudflared` ingress: `agents.nrupalakolkar.com` -> `http://127.0.0.1:9090`
-- Static UI is served by the orchestrator process itself
-- Access policy (email + service token) enforced by Cloudflare Access
+- `cloudflared` ingress: `agents.nrupalakolkar.com` -> `http://127.0.0.1:8080` (**core**,
+  same as ai/dev/rag/oracle — verified against the live oracle-aetheris tunnel ingress)
+- The static panel is served by core via Host-header routing to `{WEB_ROOT}/agents/index.html`;
+  the agent API surface (`/agents`, `/task/*`, `/workflow/run`, `/mcp`, `/a2a`) lives in core
+- Access policy (email + service token) enforced by Cloudflare Access; the core's AUD set
+  (`CF_ACCESS_AUD`) includes the agents application AUD
+- mgmt (`mgmt.nrupalakolkar.com`) is the separate `:9090` service and stays excluded from the core AUD set
 
 ## Project Structure
 
