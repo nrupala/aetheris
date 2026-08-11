@@ -12,13 +12,19 @@
   `/etc/aetheris/cf_access_jwks.json` (0644); hourly systemd timer refresh, keep last-good on failure.
 - **Signing algorithm:** RS256 (`jsonwebtoken` crate).
 - **`CF_ACCESS_AUD`** (comma-list of the Access Application AUDs whose hostnames route to
-  **core `127.0.0.1:8080`** — ai/dev/rag/oracle; **EXCLUDE agents+mgmt** which are separate Python services):
+  **core `127.0.0.1:8080`** — ai/dev/rag/oracle/agents per the live oracle-aetheris tunnel
+  ingress; **EXCLUDE mgmt** which routes to `:9090` (separate service)):
   ```
   ai    = 03bbed24857c478bab5404901b443308631d881bc5fd68fa1894ca2b1df3e756
   dev   = 358ec69acf19657a591085df7f5382915491746df9afbe8328d3e02e0974a717
   rag   = c142cabc3ce3ff0938508da8974a523af5919888d19407201bc5f4b18e808651
   oracle= 7d0506af81682ff17518a336c443415ae37e3f8a99f98e3df53d592217b2ca03
+  agents= e6682fb6e563c661ec3601050658f0a32766d1037d9d003a590beb0b8b77d1b8
   ```
+  > Correction (2026-08-11): live oracle-aetheris tunnel ingress shows
+  > `agents.nrupalakolkar.com -> 127.0.0.1:8080` (core), NOT a separate service. The
+  > agents AUD was added to `CF_ACCESS_AUD` on the box (5 entries; mgmt stays excluded
+  > on `:9090`). Applied as a config-only change + core restart (no rebuild).
 - **Flags (in `/etc/aetheris/core.env`):**
   ```
   CF_ACCESS_TEAM_DOMAIN=nrupal.cloudflareaccess.com
@@ -68,4 +74,4 @@ who reaches core directly could spoof `Cf-Access-Authenticated-User-Email` → `
 - `AGENTS.md` → "Security posture — OPA authorization (LIVE)".
 - `core/src/main.rs` → `opa_gate`, `access_role`, `is_sensitive`.
 - Ingress evidence note: cloudflared tunnel is token/dashboard-managed (no on-box ingress
-  file); `CF_ACCESS_AUD` set above follows ai/dev/rag/oracle → core, agents/mgmt → Python.
+  file); `CF_ACCESS_AUD` set above follows ai/dev/rag/oracle/agents → core, mgmt → `:9090`.
