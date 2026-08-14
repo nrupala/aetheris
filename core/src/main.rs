@@ -16,7 +16,6 @@ mod agents;
 mod auth;
 mod bridge;
 mod config;
-mod connector;
 mod fusion;
 mod guardian;
 mod implementation;
@@ -200,6 +199,26 @@ async fn metrics_handler() -> impl IntoResponse {
 
 // ─── File Operations ─────────────────────────────────────────────
 
+/// Accepts only a plain file basename (no path separators, ".", "..", empty)
+/// and returns the vault-absolute path, or `None` if the name is unsafe.
+///
+/// This is the hardened guard for *write* paths. Unlike the read-side
+/// `starts_with(vault)` check (which can lexically pass `dir/../../x`), a
+/// strict basename check makes traversal to outside the vault impossible for
+/// uploads.
+fn vault_upload_path(vault: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+    {
+        return None;
+    }
+    Some(vault.join(name))
+}
+
 async fn download_file(
     State(state): State<Arc<AppState>>,
     Path(filename): Path<String>,
@@ -253,8 +272,15 @@ async fn upload_file(
     let mut uploaded = 0;
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.file_name().unwrap_or("unknown").to_string();
+        let Some(file_path) = vault_upload_path(&state.vault_path, &name) else {
+            push_dev_log(
+                &state,
+                "WARN",
+                &format!("File upload DENIED (unsafe name): {}", name),
+            );
+            continue;
+        };
         if let Ok(data) = field.bytes().await {
-            let file_path = state.vault_path.join(&name);
             if tokio::fs::write(&file_path, &data[..]).await.is_ok() {
                 state
                     .wal
@@ -874,8 +900,12 @@ async fn rag_ingest_handler(
             continue;
         }
 
+        let Some(file_path) = vault_upload_path(&state.vault_path, &name) else {
+            errors.push(format!("\"{}\": unsafe file name rejected", name));
+            continue;
+        };
+
         if let Ok(data) = field.bytes().await {
-            let file_path = state.vault_path.join(&name);
             if tokio::fs::write(&file_path, &data[..]).await.is_ok() {
                 uploaded += 1;
 
@@ -1655,32 +1685,19 @@ async fn sync_download(
 async fn sync_upload(State(state): State<Arc<AppState>>, mut multipart: Multipart) -> StatusCode {
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.file_name().unwrap_or("unknown").to_string();
-        let path = state.vault_path.join(&name);
+        let Some(path) = vault_upload_path(&state.vault_path, &name) else {
+            push_dev_log(
+                &state,
+                "WARN",
+                &format!("Sync upload DENIED (unsafe name): {}", name),
+            );
+            continue;
+        };
         if let Ok(data) = field.bytes().await {
             tokio::fs::write(&path, &data).await.unwrap_or_default();
         }
     }
     StatusCode::OK
-}
-
-// ─── Proxy ────────────────────────────────────────────────────────
-
-#[allow(dead_code)]
-async fn proxy_handler(
-    State(state): State<Arc<AppState>>,
-    method: Method,
-    uri: Uri,
-    body: axum::body::Bytes,
-) -> impl IntoResponse {
-    if let Some(ref proxy) = state.orchestrator_proxy {
-        proxy.forward(method, &uri, body).await
-    } else {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Python orchestrator not available",
-        )
-            .into_response()
-    }
 }
 
 // ─── Settings ─────────────────────────────────────────────────────
@@ -2694,5 +2711,28 @@ mod tests {
         let (identity, role) = rec.take();
         assert_eq!(identity, "nrupalakolkar@gmail.com");
         assert_eq!(role, "admin");
+    }
+
+    #[test]
+    fn vault_upload_path_rejects_traversal() {
+        let vault = std::path::Path::new("/data/vault");
+        // Safe plain basenames pass.
+        assert_eq!(
+            vault_upload_path(vault, "report.txt"),
+            Some(vault.join("report.txt"))
+        );
+        assert_eq!(
+            vault_upload_path(vault, "a.b-c_d.png"),
+            Some(vault.join("a.b-c_d.png"))
+        );
+        // Traversal / absolute / dot / separator names are rejected.
+        assert!(vault_upload_path(vault, "../etc/passwd").is_none());
+        assert!(vault_upload_path(vault, "a/../../etc/passwd").is_none());
+        assert!(vault_upload_path(vault, "/etc/passwd").is_none());
+        assert!(vault_upload_path(vault, "..").is_none());
+        assert!(vault_upload_path(vault, ".").is_none());
+        assert!(vault_upload_path(vault, "").is_none());
+        assert!(vault_upload_path(vault, "sub\\file.exe").is_none());
+        assert!(vault_upload_path(vault, "name..txt").is_none());
     }
 }

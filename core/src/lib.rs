@@ -3,7 +3,6 @@ pub mod agents;
 pub mod auth;
 pub mod bridge;
 pub mod config;
-pub mod connector;
 pub mod fusion;
 pub mod guardian;
 pub mod implementation;
