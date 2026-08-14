@@ -58,3 +58,6 @@ tmp_*.json
 # Test artifacts
 test_doc.txt
 anchored_summary.md
+
+# Aetheris internal working notes (not published)
+docs/internal/
