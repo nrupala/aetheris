@@ -42,6 +42,18 @@ impl SecurityWatcher {
         }
         false
     }
+
+    /// Number of peers currently under an active ban (threshold met and not yet
+    /// expired). Real value used by the status endpoint instead of a fabricated
+    /// count.
+    pub fn banned_count(&self) -> usize {
+        let map = self.violations.lock().unwrap_or_else(|e| e.into_inner());
+        map.iter()
+            .filter(|(_, (count, last_seen))| {
+                *count >= MAX_FAILURES && last_seen.elapsed() < BAN_DURATION
+            })
+            .count()
+    }
 }
 
 #[cfg(test)]
@@ -68,6 +80,23 @@ mod tests {
             watcher.record_failure("peer-1".to_string());
         }
         assert!(watcher.is_banned("peer-1"));
+    }
+
+    #[test]
+    fn test_banned_count_tracks_active_bans() {
+        let watcher = SecurityWatcher::new();
+        assert_eq!(watcher.banned_count(), 0);
+        // Below threshold -> not counted.
+        for _ in 0..4 {
+            watcher.record_failure("peer-1".to_string());
+        }
+        assert_eq!(watcher.banned_count(), 0);
+        // Reach threshold -> counted.
+        watcher.record_failure("peer-1".to_string());
+        assert_eq!(watcher.banned_count(), 1);
+        // Another peer below threshold -> still just one.
+        watcher.record_failure("peer-2".to_string());
+        assert_eq!(watcher.banned_count(), 1);
     }
 
     #[test]
