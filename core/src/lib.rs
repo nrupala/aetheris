@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod proxy;
 pub mod rag;
+pub mod store;
 pub mod sync;
 pub mod util;
 pub mod wal;

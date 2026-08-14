@@ -24,6 +24,7 @@ mod mcp;
 mod metrics;
 mod proxy;
 mod rag;
+mod store;
 mod sync;
 mod util;
 mod wal;
