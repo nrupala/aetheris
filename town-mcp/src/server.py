@@ -1,6 +1,11 @@
 """Town-facing MCP server exposing sovereign tools: sovereign_search + rag_answer.
 
-Transport: MCP Streamable HTTP (what Town's MCP client connects to by URL).
+Transport: MCP Streamable HTTP in **stateless + JSON-response** mode. The edge
+MCP Worker (mcp.devinfo.dev / mcp.aimlds.org) relays a single JSON-RPC request
+per tool call rather than holding an MCP session, so the server must accept a
+bare POST to /mcp and answer with JSON -- not require an initialize/session
+handshake and reply over an SSE stream. `stateless_http=True` +
+`json_response=True` make /mcp behave that way. Same pattern used by oc-bridge.
 Auth: bearer token checked on every request (Authorization: Bearer <token>),
 layered behind Cloudflare Access (service token) at the edge. The process binds
 to 127.0.0.1 and is published only through the Aetheris cloudflared tunnel.
@@ -18,7 +23,10 @@ from .rag import rag_answer as _rag_answer
 
 store = Store(config.DB_PATH)
 mcp = FastMCP("town-sovereign", host=config.HOST, port=config.PORT,
-              streamable_http_path=config.MCP_PATH)
+              streamable_http_path=config.MCP_PATH,
+              # The edge Worker relays plain JSON-RPC (no MCP session), so serve
+              # stateless with JSON responses -- a bare POST to /mcp must work.
+              stateless_http=True, json_response=True)
 
 
 @mcp.tool()
