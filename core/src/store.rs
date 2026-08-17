@@ -9,12 +9,8 @@
 //! idempotent migrations) adapted to Aetheris. No new dependencies (`rusqlite`
 //! is already a bundled dependency used by the vector store).
 //!
-//! Integration seam: this module is complete and unit-tested in isolation.
-//! Wiring into AppState + request handlers is the follow-up (done in session
-//! with box deploy + verification), so this module carries `allow(dead_code)`
-//! until that wiring lands.
-#![allow(dead_code)]
-
+//! Integration seam: this module is wired into AppState via the persistence
+//! spine (store in AppState, premium endpoints under /store/*) .
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -85,7 +81,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ),
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TaskRow {
     pub id: i64,
     pub request_id: Option<String>,
@@ -98,7 +94,7 @@ pub struct TaskRow {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ConversationRow {
     pub id: String,
     pub title: String,
@@ -107,7 +103,7 @@ pub struct ConversationRow {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct MessageRow {
     pub id: i64,
     pub role: String,
@@ -115,7 +111,7 @@ pub struct MessageRow {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SkillRow {
     pub id: String,
     pub name: String,
@@ -125,7 +121,7 @@ pub struct SkillRow {
     pub source: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct BanRow {
     pub peer_id: String,
     pub failures: i64,
@@ -136,9 +132,9 @@ pub struct BanRow {
 #[derive(Clone)]
 pub struct Store {
     conn: Arc<Mutex<Connection>>,
+    pub path: Option<std::path::PathBuf>,
 }
 
-#[allow(dead_code)]
 impl Store {
     pub fn open(path: &Path) -> StoreResult<Self> {
         if let Some(parent) = path.parent() {
@@ -149,6 +145,7 @@ impl Store {
         Self::migrate(&mut conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            path: Some(path.to_path_buf()),
         })
     }
 
@@ -158,6 +155,7 @@ impl Store {
         Self::migrate(&mut conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            path: None,
         })
     }
 

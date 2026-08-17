@@ -25,6 +25,7 @@ mod metrics;
 mod proxy;
 mod rag;
 mod store;
+mod store_api;
 mod sync;
 mod util;
 mod wal;
@@ -72,6 +73,7 @@ pub struct AppState {
     pub guardian: Arc<Guardian>,
     pub rag_config: Arc<Mutex<rag::RagConfig>>,
     pub knowledge_graph: Option<Arc<KnowledgeGraph>>,
+    pub store: Option<store::Store>,
     pub start_time: std::time::Instant,
 }
 
@@ -205,6 +207,10 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
             "ai": { "status": "configured" },
             "vector_db": { "status": vector_db_status },
             "knowledge_graph": { "status": kg_status }
+        },
+        "persistence": {
+            "store": if state.store.is_some() { "active" } else { "disabled" },
+            "path": state.store.as_ref().and_then(|s| s.path.clone()).map(|p| p.display().to_string())
         },
         "security": {
             "auto_ban": "active",
@@ -1324,6 +1330,16 @@ async fn workflow_run_body(
     let mut steps_executed: Vec<serde_json::Value> = Vec::new();
     let mut final_output = String::new();
 
+    // Persist the workflow as a task + conversation row.
+    let task_id = state.store.as_ref().and_then(|s| {
+        s.create_task(Some(task), "workflow", "pipeline", "running")
+            .ok()
+    });
+    if let Some(store) = state.store.as_ref() {
+        let _ = store.create_conversation(&conv_id, task, "unknown");
+        let _ = store.append_message(&conv_id, "user", task);
+    }
+
     let agent_roles: Vec<String> = {
         let a = state.agents.lock().unwrap();
         a.iter().map(|ag| ag.role().as_str().to_string()).collect()
@@ -1420,6 +1436,18 @@ async fn workflow_run_body(
         .iter()
         .all(|s| s["success"].as_bool().unwrap_or(false));
 
+    // Close out persisted task + conversation with the true outcome.
+    if let Some(store) = state.store.as_ref() {
+        if let Some(id) = task_id {
+            if all_ok {
+                let _ = store.update_task(id, "completed", Some(&final_output), None);
+            } else {
+                let _ = store.update_task(id, "failed", Some(&final_output), None);
+            }
+        }
+        let _ = store.append_message(&conv_id, "assistant", &final_output);
+    }
+
     push_dev_log(
         &state,
         "INFO",
@@ -1451,6 +1479,14 @@ async fn task_submit_handler(
         .and_then(|s| s.parse::<agents::AgentRole>().ok())
         .unwrap_or(agents::AgentRole::Planner);
     let ctx = payload.context.unwrap_or(serde_json::json!({}));
+    let role_str = agent_role.as_str().to_string();
+
+    // Persist the submission as a task row before execution (request_id = task
+    // text; the row is tracked through the whole run).
+    let task_id = state
+        .store
+        .as_ref()
+        .and_then(|s| s.create_task(Some(&task), "", &role_str, "running").ok());
 
     let mut agent = agents::create_agent(
         agent_role,
@@ -1465,9 +1501,18 @@ async fn task_submit_handler(
     let mut agents = state.agents.lock().unwrap();
     agents.push(agent);
 
+    if let (Some(store), Some(id)) = (state.store.as_ref(), task_id) {
+        if result.success {
+            let _ = store.update_task(id, "completed", Some(&result.output), None);
+        } else {
+            let _ = store.update_task(id, "failed", None, Some("agent execution failed"));
+        }
+    }
+
     axum::Json(serde_json::json!({
         "agent_id": result.agent_id, "output": result.output,
         "success": result.success, "duration_ms": result.duration_ms,
+        "task_id": task_id,
     }))
 }
 
@@ -2331,6 +2376,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if knowledge_graph.is_none() {
         eprintln!("Warning: KnowledgeGraph failed to initialize (non-fatal)");
     }
+
+    let store = store::Store::open(&cfg.store_path).ok();
+    if store.is_some() {
+        println!("Persistence store initialized at {:?}", cfg.store_path);
+    } else {
+        eprintln!(
+            "Warning: persistence store failed to initialize at {:?} (non-fatal)",
+            cfg.store_path
+        );
+    }
     if vector_store.is_some() {
         println!(
             "Vector store initialized at {:?}",
@@ -2433,6 +2488,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         guardian,
         rag_config,
         knowledge_graph: knowledge_graph.map(Arc::new),
+        store,
         start_time: std::time::Instant::now(),
     });
 
@@ -2506,7 +2562,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/guardian/query", post(guardian_query_handler))
         .route("/guardian/versions", get(guardian_versions_handler))
         .route("/guardian/snapshot", post(guardian_snapshot_handler))
-        .route("/guardian", get(guardian_page_handler));
+        .route("/guardian", get(guardian_page_handler))
+        .merge(store_api::store_router());
 
     let app = Router::new()
         .route("/", get(web_index_handler))
@@ -2614,10 +2671,6 @@ mod tests {
         }
     }
 
-    fn test_state(bridge: Arc<dyn SecurityBridge>, opa_enforce: bool) -> Arc<AppState> {
-        test_state_cf(bridge, opa_enforce, false)
-    }
-
     fn test_state_cf(
         bridge: Arc<dyn SecurityBridge>,
         opa_enforce: bool,
@@ -2675,6 +2728,7 @@ mod tests {
             guardian,
             rag_config: Arc::new(Mutex::new(rag::RagConfig::default())),
             knowledge_graph: None,
+            store: None,
             start_time: std::time::Instant::now(),
         })
     }
