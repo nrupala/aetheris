@@ -3,6 +3,7 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub vault_path: PathBuf,
+    pub store_path: PathBuf,
     pub ai_endpoint: String,
     pub opa_endpoint: String,
     #[allow(dead_code)] // enforcement wiring lands in Phase 3
@@ -20,8 +21,12 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
+        let vault_path = Self::path_from_env("VAULT_PATH", "vault");
         Self {
-            vault_path: Self::path_from_env("VAULT_PATH", "vault"),
+            store_path: std::env::var("AETHERIS_STORE_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| vault_path.join("aetheris.db")),
+            vault_path: vault_path.clone(),
             ai_endpoint: std::env::var("AI_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:11434".to_string()),
             opa_endpoint: std::env::var("OPA_ENDPOINT")

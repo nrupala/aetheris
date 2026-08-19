@@ -51,13 +51,21 @@ pub async fn upload(
 ) -> impl IntoResponse {
     while let Ok(Some(field)) = multipart.next_field().await {
         let filename = field.file_name().unwrap_or("unnamed").to_string();
-        let data = match field.bytes().await {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
-        };
+        // Harden against path traversal: only a plain basename is writable.
+        if filename.is_empty()
+            || filename == "."
+            || filename == ".."
+            || filename.contains('/')
+            || filename.contains('\\')
+            || filename.contains("..")
+        {
+            return (StatusCode::FORBIDDEN, "Access Denied").into_response();
+        }
         let path = state.vault_path.join(&filename);
-        if tokio::fs::write(&path, data).await.is_ok() {
-            return (StatusCode::OK, format!("Uploaded {}", filename)).into_response();
+        if let Ok(data) = field.bytes().await {
+            if tokio::fs::write(&path, data).await.is_ok() {
+                return (StatusCode::OK, format!("Uploaded {}", filename)).into_response();
+            }
         }
     }
     (StatusCode::BAD_REQUEST, "Upload failed").into_response()

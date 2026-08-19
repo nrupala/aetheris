@@ -16,7 +16,6 @@ mod agents;
 mod auth;
 mod bridge;
 mod config;
-mod connector;
 mod fusion;
 mod guardian;
 mod implementation;
@@ -25,6 +24,8 @@ mod mcp;
 mod metrics;
 mod proxy;
 mod rag;
+mod store;
+mod store_api;
 mod sync;
 mod util;
 mod wal;
@@ -72,6 +73,7 @@ pub struct AppState {
     pub guardian: Arc<Guardian>,
     pub rag_config: Arc<Mutex<rag::RagConfig>>,
     pub knowledge_graph: Option<Arc<KnowledgeGraph>>,
+    pub store: Option<store::Store>,
     pub start_time: std::time::Instant,
 }
 
@@ -162,23 +164,60 @@ async fn v1_proxy_handler(
 
 // ─── Status ──────────────────────────────────────────────────────
 
-async fn status_handler(State(_state): State<Arc<AppState>>) -> impl IntoResponse {
+async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let uptime = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let core_port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+
+    // Honest component state — none of this is invented.
+    let vault_status = if state.vault_path.exists() {
+        "present"
+    } else {
+        "missing"
+    };
+    let vector_db_status = if state.vector_store.is_some() {
+        "connected"
+    } else {
+        "unavailable"
+    };
+    let kg_status = if state.knowledge_graph.is_some() {
+        "connected"
+    } else {
+        "unavailable"
+    };
+    let banned_peers = state.security_watcher.banned_count();
+
     axum::Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "uptime": uptime,
         "port": core_port,
         "components": {
-            "vault": { "status": "encrypted_mounted" },
-            "mesh": { "status": "active", "peers": 0 },
-            "ai": { "status": "ready" },
-            "vector_db": { "status": "connected" }
+            "vault": {
+                "status": vault_status,
+                "encryption_at_rest": "none",
+                "note": "native deployment; filesystem-level encryption (LUKS/ZFS) not configured"
+            },
+            "mesh": {
+                "status": "disabled",
+                "peers": 0,
+                "note": "WireGuard mesh deferred; single node reached via Cloudflare Tunnel"
+            },
+            "ai": { "status": "configured" },
+            "vector_db": { "status": vector_db_status },
+            "knowledge_graph": { "status": kg_status }
         },
-        "security": { "auto_ban": "active", "banned_peers": 0, "ghost_shell": "armed" }
+        "persistence": {
+            "store": if state.store.is_some() { "active" } else { "disabled" },
+            "path": state.store.as_ref().and_then(|s| s.path.clone()).map(|p| p.display().to_string())
+        },
+        "security": {
+            "auto_ban": "active",
+            "banned_peers": banned_peers,
+            "ghost_shell": "disabled",
+            "note": "ghost_shell honeypot is aspirational/not deployed; disabled"
+        }
     }))
     .into_response()
 }
@@ -199,6 +238,26 @@ async fn metrics_handler() -> impl IntoResponse {
 }
 
 // ─── File Operations ─────────────────────────────────────────────
+
+/// Accepts only a plain file basename (no path separators, ".", "..", empty)
+/// and returns the vault-absolute path, or `None` if the name is unsafe.
+///
+/// This is the hardened guard for *write* paths. Unlike the read-side
+/// `starts_with(vault)` check (which can lexically pass `dir/../../x`), a
+/// strict basename check makes traversal to outside the vault impossible for
+/// uploads.
+fn vault_upload_path(vault: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+    {
+        return None;
+    }
+    Some(vault.join(name))
+}
 
 async fn download_file(
     State(state): State<Arc<AppState>>,
@@ -253,8 +312,15 @@ async fn upload_file(
     let mut uploaded = 0;
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.file_name().unwrap_or("unknown").to_string();
+        let Some(file_path) = vault_upload_path(&state.vault_path, &name) else {
+            push_dev_log(
+                &state,
+                "WARN",
+                &format!("File upload DENIED (unsafe name): {}", name),
+            );
+            continue;
+        };
         if let Ok(data) = field.bytes().await {
-            let file_path = state.vault_path.join(&name);
             if tokio::fs::write(&file_path, &data[..]).await.is_ok() {
                 state
                     .wal
@@ -290,14 +356,59 @@ async fn search_handler(
 ) -> impl IntoResponse {
     metrics::SEARCH_QUERIES.inc();
     let query = params.get("q").cloned().unwrap_or_default();
-    let answer = state
-        .model_bridge
-        .query(&format!("Search query: {}", query), &state.default_model)
-        .await
-        .unwrap_or_default();
-    let results =
-        vec![serde_json::json!({"filename": "example.pdf", "score": 0.95, "excerpt": answer})];
-    axum::Json(serde_json::json!({"query": query, "results": results, "total": 1})).into_response()
+    if query.trim().is_empty() {
+        return axum::Json(serde_json::json!({
+            "query": query, "results": [], "total": 0, "note": "empty query"
+        }))
+        .into_response();
+    }
+    // Real semantic search over the vector store — not a hardcoded result.
+    if let Some(ref store) = state.vector_store {
+        match state.model_bridge.embed(&query).await {
+            Ok(emb) => match store.search(&emb, 10) {
+                Ok(results) => {
+                    let items: Vec<serde_json::Value> = results
+                        .iter()
+                        .map(|r| {
+                            serde_json::json!({
+                                "filename": r.source,
+                                "score": r.score,
+                                "excerpt": r.text,
+                                "chunk_index": r.chunk_index,
+                                "chunk_id": r.chunk_id,
+                            })
+                        })
+                        .collect();
+                    return axum::Json(serde_json::json!({
+                        "query": query, "results": items, "total": items.len()
+                    }))
+                    .into_response();
+                }
+                Err(e) => {
+                    return axum::Json(serde_json::json!({
+                        "query": query, "results": [], "total": 0, "error": e
+                    }))
+                    .into_response();
+                }
+            },
+            Err(e) => {
+                return axum::Json(serde_json::json!({
+                    "query": query,
+                    "results": [],
+                    "total": 0,
+                    "error": format!("embedding failed: {}", e),
+                }))
+                .into_response();
+            }
+        }
+    }
+    axum::Json(serde_json::json!({
+        "query": query,
+        "results": [],
+        "total": 0,
+        "note": "vector store not initialized",
+    }))
+    .into_response()
 }
 
 /// Returns (total_mb, used_mb) of system memory from /proc/meminfo (Linux).
@@ -333,10 +444,30 @@ fn system_memory_mb() -> (u64, u64) {
 
 async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let ai_ok = state.model_bridge.list_models().await.is_ok();
-    let agents_len = state.agents.lock().unwrap().len();
+    let agents = state.agents.lock().unwrap();
+    let agents_len = agents.len();
+    let active_tasks = agents
+        .iter()
+        .filter(|a| a.state().as_str() != "idle")
+        .count();
+    drop(agents);
     let kg_ok = state.knowledge_graph.is_some();
     let vs_ok = state.vector_store.is_some();
     let (total_mb, used_mb) = system_memory_mb();
+    let memory_util_pct = used_mb
+        .saturating_mul(100)
+        .checked_div(total_mb)
+        .unwrap_or(0);
+    let bottleneck = if memory_util_pct > 80 {
+        "memory"
+    } else if active_tasks > 0 {
+        "agents"
+    } else {
+        "none"
+    };
+    // Forecast confidence reflects whether we have a real system measurement:
+    // real memory data -> high confidence; no data -> low.
+    let confidence = if total_mb > 0 { 0.8_f64 } else { 0.2_f64 };
     let mut services = vec![
         serde_json::json!({"name": "aetheris_core", "status": if ai_ok { "running" } else { "degraded" }, "port": 8080}),
         serde_json::json!({"name": "vector_store", "status": if vs_ok { "running" } else { "unavailable" }, "port": 0}),
@@ -347,22 +478,26 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
             serde_json::json!({"name": "orchestrator_proxy", "status": "running", "port": 9090}),
         );
     }
+    let tool_count = state.mcp_server.list_tools_json()["tools"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
     axum::Json(serde_json::json!({
         "status": "ok",
         "services": services,
         "agents": agents_len,
-        "tasks": 0,
-        "tools": state.mcp_server.list_tools_json()["tools"].as_array().map(|a| a.len()).unwrap_or(0),
-        "prompts": 8,
+        "tasks": active_tasks,
+        "tools": tool_count,
+        "prompts": 0,
         "ai_connected": ai_ok,
         "cross_system": state.orchestrator_proxy.is_some(),
         "total_memory_mb": total_mb,
         "memory_used_mb": used_mb,
         "spread_forecast": {
             "total_memory_mb": total_mb,
-            "memory_utilization_pct": used_mb.saturating_mul(100).checked_div(total_mb).unwrap_or(0),
-            "confidence": 0.85,
-            "bottleneck": "none"
+            "memory_utilization_pct": memory_util_pct,
+            "confidence": confidence,
+            "bottleneck": bottleneck
         }
     }))
     .into_response()
@@ -874,8 +1009,12 @@ async fn rag_ingest_handler(
             continue;
         }
 
+        let Some(file_path) = vault_upload_path(&state.vault_path, &name) else {
+            errors.push(format!("\"{}\": unsafe file name rejected", name));
+            continue;
+        };
+
         if let Ok(data) = field.bytes().await {
-            let file_path = state.vault_path.join(&name);
             if tokio::fs::write(&file_path, &data[..]).await.is_ok() {
                 uploaded += 1;
 
@@ -1191,6 +1330,16 @@ async fn workflow_run_body(
     let mut steps_executed: Vec<serde_json::Value> = Vec::new();
     let mut final_output = String::new();
 
+    // Persist the workflow as a task + conversation row.
+    let task_id = state.store.as_ref().and_then(|s| {
+        s.create_task(Some(task), "workflow", "pipeline", "running")
+            .ok()
+    });
+    if let Some(store) = state.store.as_ref() {
+        let _ = store.create_conversation(&conv_id, task, "unknown");
+        let _ = store.append_message(&conv_id, "user", task);
+    }
+
     let agent_roles: Vec<String> = {
         let a = state.agents.lock().unwrap();
         a.iter().map(|ag| ag.role().as_str().to_string()).collect()
@@ -1287,6 +1436,18 @@ async fn workflow_run_body(
         .iter()
         .all(|s| s["success"].as_bool().unwrap_or(false));
 
+    // Close out persisted task + conversation with the true outcome.
+    if let Some(store) = state.store.as_ref() {
+        if let Some(id) = task_id {
+            if all_ok {
+                let _ = store.update_task(id, "completed", Some(&final_output), None);
+            } else {
+                let _ = store.update_task(id, "failed", Some(&final_output), None);
+            }
+        }
+        let _ = store.append_message(&conv_id, "assistant", &final_output);
+    }
+
     push_dev_log(
         &state,
         "INFO",
@@ -1318,6 +1479,14 @@ async fn task_submit_handler(
         .and_then(|s| s.parse::<agents::AgentRole>().ok())
         .unwrap_or(agents::AgentRole::Planner);
     let ctx = payload.context.unwrap_or(serde_json::json!({}));
+    let role_str = agent_role.as_str().to_string();
+
+    // Persist the submission as a task row before execution (request_id = task
+    // text; the row is tracked through the whole run).
+    let task_id = state
+        .store
+        .as_ref()
+        .and_then(|s| s.create_task(Some(&task), "", &role_str, "running").ok());
 
     let mut agent = agents::create_agent(
         agent_role,
@@ -1332,14 +1501,39 @@ async fn task_submit_handler(
     let mut agents = state.agents.lock().unwrap();
     agents.push(agent);
 
+    if let (Some(store), Some(id)) = (state.store.as_ref(), task_id) {
+        if result.success {
+            let _ = store.update_task(id, "completed", Some(&result.output), None);
+        } else {
+            let _ = store.update_task(id, "failed", None, Some("agent execution failed"));
+        }
+    }
+
     axum::Json(serde_json::json!({
         "agent_id": result.agent_id, "output": result.output,
         "success": result.success, "duration_ms": result.duration_ms,
+        "task_id": task_id,
     }))
 }
 
-async fn tasks_handler(State(_state): State<Arc<AppState>>) -> impl IntoResponse {
-    axum::Json(serde_json::json!([]))
+async fn tasks_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // Real, current agent-pool task rows — not a fabricated permanent empty list.
+    let agents = state.agents.lock().unwrap();
+    let tasks: Vec<serde_json::Value> = agents
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "agent_id": a.id().to_string(),
+                "role": a.role().as_str(),
+                "status": a.state().as_str(),
+                "tasks_completed": a.tasks_completed(),
+                "policy_checks": a.policy_checks(),
+                "policy_allowed": a.policy_allowed(),
+            })
+        })
+        .collect();
+    drop(agents);
+    axum::Json(serde_json::json!(tasks)).into_response()
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────
@@ -1483,8 +1677,36 @@ async fn knowledge_graph_stats_handler(State(state): State<Arc<AppState>>) -> im
     }.into_response()
 }
 
-async fn coordinator_circuits_handler() -> impl IntoResponse {
-    axum::Json(serde_json::json!({"circuits": []}))
+async fn coordinator_circuits_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // Real circuit state derived from actual component health.
+    let (agent_total, failed_agents) = {
+        let a = state.agents.lock().unwrap();
+        (
+            a.len() as u64,
+            a.iter().filter(|x| x.state().as_str() == "failed").count() as u64,
+        )
+    };
+    let circuits = vec![
+        serde_json::json!({
+            "name": "aetheris_core", "state": "closed", "failures": 0
+        }),
+        serde_json::json!({
+            "name": "vector_store",
+            "state": if state.vector_store.is_some() { "closed" } else { "open" },
+            "failures": if state.vector_store.is_some() { 0 } else { 1 },
+        }),
+        serde_json::json!({
+            "name": "knowledge_graph",
+            "state": if state.knowledge_graph.is_some() { "closed" } else { "open" },
+            "failures": if state.knowledge_graph.is_some() { 0 } else { 1 },
+        }),
+        serde_json::json!({
+            "name": "agents",
+            "state": if agent_total > 0 && failed_agents == agent_total { "open" } else { "closed" },
+            "failures": failed_agents,
+        }),
+    ];
+    axum::Json(serde_json::json!({"circuits": circuits})).into_response()
 }
 
 // ─── Audit ────────────────────────────────────────────────────────
@@ -1605,23 +1827,71 @@ async fn dev_config_handler(State(state): State<Arc<AppState>>) -> impl IntoResp
     axum::Json(files)
 }
 
-async fn dev_metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+/// Probes whether a loopback TCP port answers (used to report real live
+/// services instead of fabricated state on the native (no-Docker) deployment).
+async fn probe_service_port(port: u16) -> bool {
+    tokio::time::timeout(
+        std::time::Duration::from_millis(300),
+        tokio::net::TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false)
+}
+
+async fn dev_metrics_handler(state: State<Arc<AppState>>) -> impl IntoResponse {
     let uptime_hours = state.start_time.elapsed().as_secs_f64() / 3600.0;
-    let mut containers =
-        vec![serde_json::json!({"name": "aetheris_core", "status": "running", "port": 8080})];
-    if state.vector_store.is_some() {
-        containers.push(
-            serde_json::json!({"name": "aetheris_vector_store", "status": "running", "port": 0}),
-        );
+
+    // Native systemd deployment has no Docker containers — report that honestly.
+    let containers = serde_json::json!({
+        "total": 0,
+        "running": 0,
+        "deployment": "native (no Docker)",
+    });
+
+    // Probe the actual loopback service suite to report real liveness.
+    let suite: [(String, u16, String); 10] = [
+        ("aetheris_core".into(), 8080, "Rust Axum API server".into()),
+        ("ollama".into(), 11434, "Local LLM inference".into()),
+        ("opa".into(), 8181, "Open Policy Agent".into()),
+        ("aetheris_mgmt".into(), 9090, "Management UI".into()),
+        ("oc_bridge".into(), 8888, "opencode MCP bridge".into()),
+        ("opencode".into(), 8192, "opencode server".into()),
+        ("guardian_agent".into(), 8081, "Guardian agent webui".into()),
+        ("bee".into(), 8800, "Bee service".into()),
+        (
+            "research_analyst".into(),
+            8700,
+            "Research Analyst API".into(),
+        ),
+        ("code_server".into(), 8088, "VS Code server".into()),
+    ];
+
+    let mut handles = Vec::new();
+    for (name, port, description) in suite {
+        handles.push(tokio::spawn(async move {
+            (name, port, description, probe_service_port(port).await)
+        }));
     }
-    if state.knowledge_graph.is_some() {
-        containers.push(
-            serde_json::json!({"name": "aetheris_knowledge_graph", "status": "running", "port": 0}),
-        );
+    let mut services = Vec::new();
+    for h in handles {
+        if let Ok((name, port, description, alive)) = h.await {
+            services.push(serde_json::json!({
+                "name": name,
+                "port": port,
+                "status": if alive { "running" } else { "stopped" },
+                "description": description,
+                "running": alive,
+            }));
+        }
     }
+    services.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+
     axum::Json(serde_json::json!({
+        "services": services,
         "containers": containers,
-        "uptime_hours": uptime_hours
+        "uptime_hours": uptime_hours,
+        "deployment": "native",
     }))
 }
 
@@ -1655,32 +1925,19 @@ async fn sync_download(
 async fn sync_upload(State(state): State<Arc<AppState>>, mut multipart: Multipart) -> StatusCode {
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.file_name().unwrap_or("unknown").to_string();
-        let path = state.vault_path.join(&name);
+        let Some(path) = vault_upload_path(&state.vault_path, &name) else {
+            push_dev_log(
+                &state,
+                "WARN",
+                &format!("Sync upload DENIED (unsafe name): {}", name),
+            );
+            continue;
+        };
         if let Ok(data) = field.bytes().await {
             tokio::fs::write(&path, &data).await.unwrap_or_default();
         }
     }
     StatusCode::OK
-}
-
-// ─── Proxy ────────────────────────────────────────────────────────
-
-#[allow(dead_code)]
-async fn proxy_handler(
-    State(state): State<Arc<AppState>>,
-    method: Method,
-    uri: Uri,
-    body: axum::body::Bytes,
-) -> impl IntoResponse {
-    if let Some(ref proxy) = state.orchestrator_proxy {
-        proxy.forward(method, &uri, body).await
-    } else {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Python orchestrator not available",
-        )
-            .into_response()
-    }
 }
 
 // ─── Settings ─────────────────────────────────────────────────────
@@ -2119,6 +2376,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if knowledge_graph.is_none() {
         eprintln!("Warning: KnowledgeGraph failed to initialize (non-fatal)");
     }
+
+    let store = store::Store::open(&cfg.store_path).ok();
+    if store.is_some() {
+        println!("Persistence store initialized at {:?}", cfg.store_path);
+    } else {
+        eprintln!(
+            "Warning: persistence store failed to initialize at {:?} (non-fatal)",
+            cfg.store_path
+        );
+    }
     if vector_store.is_some() {
         println!(
             "Vector store initialized at {:?}",
@@ -2221,6 +2488,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         guardian,
         rag_config,
         knowledge_graph: knowledge_graph.map(Arc::new),
+        store,
         start_time: std::time::Instant::now(),
     });
 
@@ -2294,7 +2562,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/guardian/query", post(guardian_query_handler))
         .route("/guardian/versions", get(guardian_versions_handler))
         .route("/guardian/snapshot", post(guardian_snapshot_handler))
-        .route("/guardian", get(guardian_page_handler));
+        .route("/guardian", get(guardian_page_handler))
+        .merge(store_api::store_router());
 
     let app = Router::new()
         .route("/", get(web_index_handler))
@@ -2402,10 +2671,6 @@ mod tests {
         }
     }
 
-    fn test_state(bridge: Arc<dyn SecurityBridge>, opa_enforce: bool) -> Arc<AppState> {
-        test_state_cf(bridge, opa_enforce, false)
-    }
-
     fn test_state_cf(
         bridge: Arc<dyn SecurityBridge>,
         opa_enforce: bool,
@@ -2463,6 +2728,7 @@ mod tests {
             guardian,
             rag_config: Arc::new(Mutex::new(rag::RagConfig::default())),
             knowledge_graph: None,
+            store: None,
             start_time: std::time::Instant::now(),
         })
     }
@@ -2694,5 +2960,28 @@ mod tests {
         let (identity, role) = rec.take();
         assert_eq!(identity, "nrupalakolkar@gmail.com");
         assert_eq!(role, "admin");
+    }
+
+    #[test]
+    fn vault_upload_path_rejects_traversal() {
+        let vault = std::path::Path::new("/data/vault");
+        // Safe plain basenames pass.
+        assert_eq!(
+            vault_upload_path(vault, "report.txt"),
+            Some(vault.join("report.txt"))
+        );
+        assert_eq!(
+            vault_upload_path(vault, "a.b-c_d.png"),
+            Some(vault.join("a.b-c_d.png"))
+        );
+        // Traversal / absolute / dot / separator names are rejected.
+        assert!(vault_upload_path(vault, "../etc/passwd").is_none());
+        assert!(vault_upload_path(vault, "a/../../etc/passwd").is_none());
+        assert!(vault_upload_path(vault, "/etc/passwd").is_none());
+        assert!(vault_upload_path(vault, "..").is_none());
+        assert!(vault_upload_path(vault, ".").is_none());
+        assert!(vault_upload_path(vault, "").is_none());
+        assert!(vault_upload_path(vault, "sub\\file.exe").is_none());
+        assert!(vault_upload_path(vault, "name..txt").is_none());
     }
 }
