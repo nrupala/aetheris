@@ -2169,6 +2169,17 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
 
     let method = req.method().as_str().to_string();
     let path = req.uri().path().to_string();
+    // The gate runs on the OUTER router, which mounts every handler twice: bare
+    // (.merge) and under .nest("/api", ...). `path` is the full incoming path, so
+    // sensitive GET reads under the /api mount (/api/keys, /api/audit/*,
+    // /api/sync/download/*, /api/dev/logs) would bypass the classification that
+    // /keys hits. Canonicalize by stripping a leading "/api" segment before
+    // sensitivity classification; AuthzInput keeps the raw `path` for audit fidelity.
+    let spath: &str = match path.strip_prefix("/api") {
+        Some(rest) if rest.is_empty() => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => path.as_str(),
+    };
 
     // CF Access JWT verification on sensitive routes (P5).
     // - CF_JWT_VERIFY=1 (enforce): the VERIFIED JWT email is the authoritative identity;
@@ -2178,7 +2189,7 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
     // eprintln! so observations surface in journalctl -u aetheris-core (the app
     // installs logging via tracing, not the `log` facade).
     let mut identity_email = email.clone();
-    if is_sensitive(&method, &path) {
+    if is_sensitive(&method, spath) {
         match auth::cf_jwt::verify_assertion(headers, &state.cf_jwt) {
             Ok(identity) => {
                 if state.cf_jwt.enabled {
@@ -2230,7 +2241,7 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
         metrics::SECURITY_VIOLATIONS.inc();
         // Enforcement is intentionally off this phase: only 403 mutating/sensitive
         // routes when opa_enforce=true.
-        if state.opa_enforce && is_sensitive(&method, &path) {
+        if state.opa_enforce && is_sensitive(&method, spath) {
             return (
                 StatusCode::FORBIDDEN,
                 Json(serde_json::json!({"error": "Policy denied"})),
@@ -2834,6 +2845,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn enforce_blocks_sensitive_get_under_api_prefix() {
+        // Regression: the OPA gate runs on the OUTER router, which mounts every
+        // handler both bare (.merge) and under .nest("/api", ...). Sensitive GET
+        // reads must be blocked under the /api prefix exactly as they are bare,
+        // so the /api mount cannot be used to bypass the gate.
+        let app = test_app(Arc::new(DenyBridge), true).await;
+
+        for uri in ["/api/keys", "/api/audit/log", "/api/dev/logs"] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(uri)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                res.status(),
+                StatusCode::FORBIDDEN,
+                "sensitive GET {} under /api must be blocked",
+                uri
+            );
+        }
+
+        // A non-sensitive path under /api is NOT short-circuited by the gate; it
+        // passes through to routing (no matching test route -> 404, not 403).
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(res.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]
