@@ -2870,8 +2870,7 @@ mod tests {
             assert_eq!(
                 res.status(),
                 StatusCode::FORBIDDEN,
-                "sensitive GET {} under /api must be blocked",
-                uri
+                "sensitive GET {uri} under /api must be blocked",
             );
         }
 
