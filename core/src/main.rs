@@ -2176,7 +2176,7 @@ async fn opa_gate(State(state): State<Arc<AppState>>, req: Request<Body>, next: 
     // /keys hits. Canonicalize by stripping a leading "/api" segment before
     // sensitivity classification; AuthzInput keeps the raw `path` for audit fidelity.
     let spath: &str = match path.strip_prefix("/api") {
-        Some(rest) if rest.is_empty() => "/",
+        Some("") => "/",
         Some(rest) if rest.starts_with('/') => rest,
         _ => path.as_str(),
     };
