@@ -131,9 +131,9 @@ See `docs/README.md` for the full documentation index. Key documents:
 - [Common Commands](docs/COMMANDS.md)
 - [FAQ](docs/FAQ.md)
 - [What Not To Do](docs/WHAT_NOT_TO_DO.md)
+- [Role-Based Guides](docs/ROLE_GUIDES.md)
 - [Changelog](CHANGELOG.md)
 - [Security Policy](SECURITY.md)
-- [Role-Based Guides](docs/ROLE_GUIDES.md)
 
 ## Emergency
 
