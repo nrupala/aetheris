@@ -1,5 +1,7 @@
 # Aetheris — Sovereign AI-Native Personal Cloud
 
+> **Status:** Current · pre-1.0, active development · **Version:** 0.1.0 · **Updated:** 2026-08-30
+
 Zero-trust personal cloud with AI-powered policy enforcement, secure storage, multi-agent orchestration, and local LLM inference. Built with Rust (Axum), OPA, and Ollama; deployed natively (systemd) behind Cloudflare Access — no Docker.
 
 ## Architecture
@@ -130,6 +132,8 @@ See `docs/README.md` for the full documentation index. Key documents:
 - [FAQ](docs/FAQ.md)
 - [What Not To Do](docs/WHAT_NOT_TO_DO.md)
 - [Role-Based Guides](docs/ROLE_GUIDES.md)
+- [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
 
 ## Emergency
 
