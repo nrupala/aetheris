@@ -1,5 +1,7 @@
 # Aetheris Documentation
 
+> **Status:** Current · pre-1.0, active development · **Version:** 0.1.0 · **Updated:** 2026-08-30
+
 **Aetheris** is a Sovereign AI-Native Personal Cloud built with Rust — designed for secure, self-hosted deployment with zero-trust security and AI-powered policy enforcement.
 
 ## Quick Start
@@ -19,8 +21,6 @@ sudo scripts/install-native.sh
 | Document | Description |
 |----------|-------------|
 | [Architecture Overview](architecture/overview.md) | System design, network topology, component architecture, data flows |
-| [Emulation Environment](architecture/emulation.md) | Retired Docker-based bare metal emulation (historical; core now deploys natively) |
-| [Port Allocation](architecture/port-allocation.md) | Dynamic port allocation and service discovery |
 
 ### API Reference
 | Document | Description |
@@ -34,7 +34,7 @@ sudo scripts/install-native.sh
 | [User Guide](guides/user-guide.md) | End-user guide for RAG and document Q&A |
 | [Application & Usage Guide](guides/application-guide.md) | 10 use cases with deployment options and extensions |
 | [Deployment Guide](guides/deployment.md) | Production, development, and local deployment |
-| [Security Guide](guides/security.md) | Security principles, WireGuard, encryption, OPA policies |
+| [Security Guide](guides/security.md) | Security principles, encryption, OPA policies |
 | [Agent Orchestrator](guides/agent-orchestrator.md) | Multi-agent coordination with MCP, A2A, workflow engine |
 | [RAG Pipeline](guides/rag-pipeline.md) | Retrieval-Augmented Generation from upload to answer |
 | [Knowledge Graph](guides/knowledge-graph.md) | Personal context layer and memory system |
@@ -52,7 +52,7 @@ sudo scripts/install-native.sh
 | [What Not To Do](WHAT_NOT_TO_DO.md) | Anti-patterns and common mistakes to avoid |
 | [Role-Based Guides](ROLE_GUIDES.md) | Per-persona guides (User, Developer, Maintainer, Admin, Ops, Regulator) |
 
-### Roadmap
+### Roadmap (PLANNED — not yet built)
 | Document | Description |
 |----------|-------------|
 | [Phase 2 Roadmap](PHASE2_ROADMAP.md) | Architecture roadmap for isolation, encryption, efficiency, and autonomy |
