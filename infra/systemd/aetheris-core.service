@@ -15,6 +15,11 @@ WorkingDirectory=/data
 # Non-secret environment (AI_ENDPOINT, model fallbacks, PORT, OPA, VAULT_PATH).
 # Installed from config/core.env.example by scripts/install-native.sh.
 EnvironmentFile=/etc/aetheris/core.env
+# Boot-assert: fail loudly if the writable data dir (ReadWritePaths=/data below)
+# is not actually writable, so a read-only (EROFS) remount cannot regress
+# silently. Runs first, inside the sandbox as User=aetheris, so it checks the
+# exact write access the service depends on. See infra/systemd/assert-writable.sh.
+ExecStartPre=/opt/aetheris/bin/assert-writable.sh /data
 # Core binds 127.0.0.1:8080 (loopback); cloudflared fronts it publicly.
 ExecStart=/opt/aetheris/bin/aetheris-core
 Restart=on-failure

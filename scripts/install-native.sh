@@ -65,6 +65,13 @@ log "Installing binary to ${INSTALL_DIR}/aetheris-core"
 install -d -m 0755 "${INSTALL_DIR}"
 install -m 0755 "${BIN_SRC}" "${INSTALL_DIR}/aetheris-core"
 
+# --- 3b. Boot-assert helper (installed alongside the binary) ---
+# aetheris-core.service runs this as its first ExecStartPre to fail loudly if
+# the writable data dir (ReadWritePaths=/data) is not actually writable - an
+# EROFS / read-only-remount guard so the regression cannot pass silently.
+log "Installing assert-writable.sh to ${INSTALL_DIR}/assert-writable.sh"
+install -m 0755 "${REPO_ROOT}/infra/systemd/assert-writable.sh" "${INSTALL_DIR}/assert-writable.sh"
+
 # --- 4. Data dir (vault + WAL; matches the unit's ReadWritePaths=/data) ---
 # /data is 0755 (world-traversable): Ollama's model store may live under
 # /data/ollama-models and the ollama user must be able to traverse /data.
