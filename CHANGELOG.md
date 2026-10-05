@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Portfolio certification rollout: CONTRIBUTING.md extended with PR-flow
+  discipline (draft PR -> CI green -> owner merges; CHANGELOG entry +
+  Cargo.toml/VERSION bump per PR; releases tagged vX.Y.Z) and build/test
+  commands, NOTICE attribution. Deploy survey: `deploy.sh` is a host-native
+  manual deploy (no signed-wrapper target), GitHub Pages docs and release
+  binaries are CI-only (flagged for owner decision; no private keys in CI).
+
 ## [0.1.0] - 2026-08-30
 
 ### Added
