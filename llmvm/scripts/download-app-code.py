@@ -4,7 +4,7 @@ import stat
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('74.208.107.178', username='root', password='k3gaXS7B', timeout=30)
+ssh.connect('74.208.107.178', username='root', password=os.environ["VPS_ROOT_PASSWORD"], timeout=30)
 
 sftp = ssh.open_sftp()
 target_dir = r'C:\Users\HomeUser\vps1\laravel-complete'
