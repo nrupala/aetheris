@@ -5,7 +5,7 @@ os.makedirs(backup_dir, exist_ok=True)
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('74.208.107.178', username='root', password='k3gaXS7B', timeout=15)
+ssh.connect('74.208.107.178', username='root', password=os.environ["VPS_ROOT_PASSWORD"], timeout=15)
 
 sftp = ssh.open_sftp()
 
